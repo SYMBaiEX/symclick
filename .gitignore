@@ -1,4 +1,4 @@
 build/
 *.zip
 .DS_Store
-
+main.plist
