@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 SYMBaiEX
+
 #import <AppKit/AppKit.h>
 #import <ApplicationServices/ApplicationServices.h>
 #import <Carbon/Carbon.h>
@@ -746,9 +749,11 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
 
 - (void)showAbout:(id)sender {
     (void)sender;
+    id bundledVersion = [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
+    NSString *version = [bundledVersion isKindOfClass:NSString.class] ? bundledVersion : @"development";
     [NSApp orderFrontStandardAboutPanelWithOptions:@{
         NSAboutPanelOptionApplicationName: @"SymClick",
-        NSAboutPanelOptionApplicationVersion: @"1.0.0",
+        NSAboutPanelOptionApplicationVersion: version,
         NSAboutPanelOptionVersion: @"Native Objective-C++ menu-bar autoclicker",
         NSAboutPanelOptionCredits: [[NSAttributedString alloc] initWithString:
             @"A lean Core Graphics click engine for macOS."],

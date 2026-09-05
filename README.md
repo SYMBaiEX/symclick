@@ -1,8 +1,13 @@
 # SymClick
 
+[![CI](https://github.com/SYMBaiEX/symclick/actions/workflows/ci.yml/badge.svg)](https://github.com/SYMBaiEX/symclick/actions/workflows/ci.yml)
+[![GitHub release](https://img.shields.io/github/v/release/SYMBaiEX/symclick)](https://github.com/SYMBaiEX/symclick/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 SymClick is a tiny native macOS menu-bar autoclicker. It uses AppKit for the menu,
 Carbon for a global start/stop hotkey, and a dedicated Objective-C++/Core Graphics
-click engine. There are no third-party dependencies or background services.
+click engine. There are no third-party dependencies, telemetry, network requests,
+or background services.
 
 ## Features
 
@@ -14,7 +19,16 @@ click engine. There are no third-party dependencies or background services.
 - Native menu-bar status with no Dock icon
 - Universal Apple Silicon and Intel build
 
-## Build and run
+## Install
+
+Download the universal macOS archive from [GitHub Releases](https://github.com/SYMBaiEX/symclick/releases/latest),
+extract it, and move `SymClick.app` to `/Applications`.
+
+The v1.0.0 binary is Developer ID–signed with hardened runtime but is not notarized.
+On first launch, macOS may ask you to confirm it in **System Settings → Privacy &
+Security → Open Anyway**. Release checksums are published beside each archive.
+
+### Build from source
 
 Requirements: macOS 12 or newer and Xcode Command Line Tools.
 
@@ -59,8 +73,19 @@ it is allowed.
 
 ```sh
 make test
+make verify
+make package
 make clean
 ```
 
 The complete app is implemented in [`src/main.mm`](src/main.mm). The release build
-uses `-O3`, link-time optimization, and produces one ad-hoc-signed `.app` bundle.
+uses `-O3`, link-time optimization, and produces one `.app` bundle. Local builds are
+ad-hoc signed by default. Maintainers can pass `SIGN_IDENTITY` to create a hardened,
+timestamped Developer ID build.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the contributor workflow and
+[SECURITY.md](SECURITY.md) for private vulnerability reporting.
+
+## License
+
+SymClick is available under the [MIT License](LICENSE).

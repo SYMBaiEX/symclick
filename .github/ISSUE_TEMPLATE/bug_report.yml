@@ -1,0 +1,44 @@
+name: Bug report
+description: Report reproducible behavior that is not working as intended
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for taking the time to report a SymClick bug.
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "For example: macOS 15.6"
+    validations:
+      required: true
+  - type: input
+    id: hardware
+    attributes:
+      label: Mac hardware
+      placeholder: "Apple Silicon or Intel"
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: What happened?
+      description: Include the configured shortcut, CPS, and mouse-button mode when relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Open SymClick…
+        2. Set…
+        3. Press…
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Additional context
+      description: Add screenshots or logs, but remove private information first.
