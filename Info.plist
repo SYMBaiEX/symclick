@@ -5,15 +5,15 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleDisplayName</key>
-    <string>TurboClick</string>
+    <string>SymClick</string>
     <key>CFBundleExecutable</key>
-    <string>TurboClick</string>
+    <string>SymClick</string>
     <key>CFBundleIdentifier</key>
-    <string>com.symbiex.turboclick</string>
+    <string>com.symbiex.symclick</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>TurboClick</string>
+    <string>SymClick</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -32,4 +32,3 @@
     <string>NSApplication</string>
 </dict>
 </plist>
-

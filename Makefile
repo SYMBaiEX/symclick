@@ -1,4 +1,4 @@
-APP_NAME := TurboClick
+APP_NAME := SymClick
 BUILD_DIR := build
 APP_BUNDLE := $(BUILD_DIR)/$(APP_NAME).app
 CONTENTS_DIR := $(APP_BUNDLE)/Contents
@@ -33,4 +33,3 @@ install: all
 
 clean:
 	rm -rf $(BUILD_DIR)
-

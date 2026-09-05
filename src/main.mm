@@ -18,7 +18,7 @@ constexpr double kMinimumCPS = 1.0;
 constexpr double kMaximumCPS = 5000.0;
 constexpr UInt32 kDefaultKeyCode = kVK_ANSI_C;
 constexpr UInt32 kDefaultModifiers = controlKey | optionKey;
-constexpr OSType kHotKeySignature = 0x54434C4B;  // "TCLK"
+constexpr OSType kHotKeySignature = 0x53594D43;  // "SYMC"
 constexpr UInt32 kHotKeyID = 1;
 
 NSString *const kCPSPreference = @"clicksPerSecond";
@@ -387,9 +387,9 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
 
 - (void)buildMenu {
     _statusItem = [NSStatusBar.systemStatusBar statusItemWithLength:NSSquareStatusItemLength];
-    _statusItem.button.toolTip = @"TurboClick";
+    _statusItem.button.toolTip = @"SymClick";
 
-    _menu = [[NSMenu alloc] initWithTitle:@"TurboClick"];
+    _menu = [[NSMenu alloc] initWithTitle:@"SymClick"];
     _menu.delegate = self;
     _menu.autoenablesItems = NO;
 
@@ -441,12 +441,12 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     accessibility.target = self;
     [_menu addItem:accessibility];
 
-    NSMenuItem *about = [[NSMenuItem alloc] initWithTitle:@"About TurboClick" action:@selector(showAbout:) keyEquivalent:@""];
+    NSMenuItem *about = [[NSMenuItem alloc] initWithTitle:@"About SymClick" action:@selector(showAbout:) keyEquivalent:@""];
     about.target = self;
     [_menu addItem:about];
     [_menu addItem:NSMenuItem.separatorItem];
 
-    NSMenuItem *quit = [[NSMenuItem alloc] initWithTitle:@"Quit TurboClick" action:@selector(terminate:) keyEquivalent:@"q"];
+    NSMenuItem *quit = [[NSMenuItem alloc] initWithTitle:@"Quit SymClick" action:@selector(terminate:) keyEquivalent:@"q"];
     quit.target = NSApp;
     [_menu addItem:quit];
 
@@ -490,7 +490,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
             [self updateUI];
             NSAlert *alert = [[NSAlert alloc] init];
             alert.messageText = @"Accessibility permission is required";
-            alert.informativeText = @"TurboClick needs permission to send mouse clicks to other apps. Enable TurboClick in Privacy & Security → Accessibility, then try again.";
+            alert.informativeText = @"SymClick needs permission to send mouse clicks to other apps. Enable SymClick in Privacy & Security → Accessibility, then try again.";
             [alert addButtonWithTitle:@"Open Settings"];
             [alert addButtonWithTitle:@"Cancel"];
             if ([alert runModal] == NSAlertFirstButtonReturn) [self openAccessibilitySettings:nil];
@@ -545,8 +545,8 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     }
 
     NSString *symbol = running ? @"bolt.circle.fill" : @"cursorarrow.click.2";
-    NSImage *image = [NSImage imageWithSystemSymbolName:symbol accessibilityDescription:@"TurboClick"];
-    if (!image) image = [NSImage imageWithSystemSymbolName:@"cursorarrow.click" accessibilityDescription:@"TurboClick"];
+    NSImage *image = [NSImage imageWithSystemSymbolName:symbol accessibilityDescription:@"SymClick"];
+    if (!image) image = [NSImage imageWithSystemSymbolName:@"cursorarrow.click" accessibilityDescription:@"SymClick"];
     [image setTemplate:YES];
     _statusItem.button.image = image;
     _statusItem.button.title = image ? @"" : (running ? @"●" : @"TC");
@@ -580,7 +580,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
                   styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
                     backing:NSBackingStoreBuffered
                       defer:NO];
-    _preferencesWindow.title = @"TurboClick Preferences";
+    _preferencesWindow.title = @"SymClick Preferences";
     _preferencesWindow.releasedWhenClosed = NO;
     _preferencesWindow.delegate = self;
 
@@ -747,7 +747,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
 - (void)showAbout:(id)sender {
     (void)sender;
     [NSApp orderFrontStandardAboutPanelWithOptions:@{
-        NSAboutPanelOptionApplicationName: @"TurboClick",
+        NSAboutPanelOptionApplicationName: @"SymClick",
         NSAboutPanelOptionApplicationVersion: @"1.0.0",
         NSAboutPanelOptionVersion: @"Native Objective-C++ menu-bar autoclicker",
         NSAboutPanelOptionCredits: [[NSAttributedString alloc] initWithString:
@@ -765,7 +765,7 @@ int RunSelfTests() {
         if (![ShortcutDisplay(kVK_F6, 0) isEqualToString:@"F6"]) return 3;
         if (CarbonModifiersFromEvent(NSEventModifierFlagCommand | NSEventModifierFlagShift) !=
             (cmdKey | shiftKey)) return 4;
-        NSLog(@"TurboClick self-test passed");
+        NSLog(@"SymClick self-test passed");
     }
     return 0;
 }

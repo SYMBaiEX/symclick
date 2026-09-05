@@ -1,6 +1,6 @@
-# TurboClick
+# SymClick
 
-TurboClick is a tiny native macOS menu-bar autoclicker. It uses AppKit for the menu,
+SymClick is a tiny native macOS menu-bar autoclicker. It uses AppKit for the menu,
 Carbon for a global start/stop hotkey, and a dedicated Objective-C++/Core Graphics
 click engine. There are no third-party dependencies or background services.
 
@@ -20,7 +20,7 @@ Requirements: macOS 12 or newer and Xcode Command Line Tools.
 
 ```sh
 make
-open build/TurboClick.app
+open build/SymClick.app
 ```
 
 Or build and open it in one command:
@@ -39,8 +39,8 @@ make install
 
 macOS requires Accessibility permission before one app can send mouse events to
 another. Start clicking once, approve the prompt, or use **Accessibility Settings…**
-in the TurboClick menu. If the app does not appear immediately, add
-`build/TurboClick.app` manually in **System Settings → Privacy & Security →
+in the SymClick menu. If the app does not appear immediately, add
+`build/SymClick.app` manually in **System Settings → Privacy & Security →
 Accessibility**.
 
 ## Usage
@@ -52,7 +52,7 @@ Accessibility**.
 
 The 5,000 CPS setting is intentionally aggressive. Real throughput depends on the
 target app and macOS event handling. Start lower, and keep the stop shortcut easy to
-reach. Some games and online services prohibit automation; use TurboClick only where
+reach. Some games and online services prohibit automation; use SymClick only where
 it is allowed.
 
 ## Development
@@ -64,4 +64,3 @@ make clean
 
 The complete app is implemented in [`src/main.mm`](src/main.mm). The release build
 uses `-O3`, link-time optimization, and produces one ad-hoc-signed `.app` bundle.
-
