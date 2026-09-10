@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <mach/mach_time.h>
 #include <pthread.h>
+#include <random>
 #include <string>
 #include <thread>
 
@@ -19,6 +20,9 @@ namespace {
 constexpr double kDefaultCPS = 25.0;
 constexpr double kMinimumCPS = 1.0;
 constexpr double kMaximumCPS = 5000.0;
+constexpr uint64_t kMaximumClickLimit = 10'000'000;
+constexpr double kMaximumDurationSeconds = 86'400.0;
+constexpr double kMaximumJitterPixels = 20.0;
 constexpr UInt32 kDefaultKeyCode = kVK_ANSI_C;
 constexpr UInt32 kDefaultModifiers = controlKey | optionKey;
 constexpr OSType kHotKeySignature = 0x53594D43;  // "SYMC"
@@ -28,12 +32,38 @@ NSString *const kCPSPreference = @"clicksPerSecond";
 NSString *const kMouseButtonPreference = @"mouseButton";
 NSString *const kHotKeyCodePreference = @"hotKeyCode";
 NSString *const kHotKeyModifiersPreference = @"hotKeyModifiers";
+NSString *const kLocationModePreference = @"locationMode";
+NSString *const kFixedXPreference = @"fixedX";
+NSString *const kFixedYPreference = @"fixedY";
+NSString *const kFixedLocationCapturedPreference = @"fixedLocationCaptured";
+NSString *const kLimitModePreference = @"limitMode";
+NSString *const kClickLimitPreference = @"clickLimit";
+NSString *const kDurationSecondsPreference = @"durationSeconds";
+NSString *const kClickPatternPreference = @"clickPattern";
+NSString *const kJitterPixelsPreference = @"jitterPixels";
 
 double NormalizeCPS(double value) {
     if (!std::isfinite(value)) {
         return kDefaultCPS;
     }
     return std::clamp(std::round(value), kMinimumCPS, kMaximumCPS);
+}
+
+uint64_t NormalizeClickLimit(double value) {
+    if (!std::isfinite(value)) return 1;
+    if (value <= 1.0) return 1;
+    if (value >= static_cast<double>(kMaximumClickLimit)) return kMaximumClickLimit;
+    return static_cast<uint64_t>(std::round(value));
+}
+
+double NormalizeDuration(double value) {
+    if (!std::isfinite(value)) return 60.0;
+    return std::clamp(std::round(value), 1.0, kMaximumDurationSeconds);
+}
+
+double NormalizeJitter(double value) {
+    if (!std::isfinite(value)) return 0.0;
+    return std::clamp(std::round(value), 0.0, kMaximumJitterPixels);
 }
 
 NSString *KeyName(UInt32 keyCode) {
@@ -159,12 +189,24 @@ public:
 
     void setClicksPerSecond(double cps) { cps_.store(NormalizeCPS(cps)); }
     void setMouseButton(int button) { mouseButton_.store(std::clamp(button, 0, 2)); }
+    void setLocationMode(int mode) { locationMode_.store(std::clamp(mode, 0, 1)); }
+    void setFixedLocation(CGPoint location) {
+        fixedX_.store(location.x);
+        fixedY_.store(location.y);
+    }
+    void setLimitMode(int mode) { limitMode_.store(std::clamp(mode, 0, 2)); }
+    void setClickLimit(uint64_t limit) { clickLimit_.store(std::clamp<uint64_t>(limit, 1, kMaximumClickLimit)); }
+    void setDurationSeconds(double seconds) { durationSeconds_.store(NormalizeDuration(seconds)); }
+    void setClickPattern(int pattern) { clickPattern_.store(std::clamp(pattern, 0, 1)); }
+    void setJitterPixels(double pixels) { jitterPixels_.store(NormalizeJitter(pixels)); }
     bool isRunning() const { return running_.load(); }
+    uint64_t clickCount() const { return clickCount_.load(); }
 
     void start() {
         bool expected = false;
         if (!running_.compare_exchange_strong(expected, true)) return;
         if (worker_.joinable()) worker_.join();
+        clickCount_.store(0);
         worker_ = std::thread([this] { run(); });
     }
 
@@ -179,12 +221,18 @@ private:
                                      static_cast<double>(timebase.numer));
     }
 
-    void postClick(CGEventSourceRef source) const {
+    CGPoint clickLocation() const {
+        if (locationMode_.load() == 1) {
+            return CGPointMake(fixedX_.load(), fixedY_.load());
+        }
         CGEventRef locationEvent = CGEventCreate(nullptr);
-        if (!locationEvent) return;
+        if (!locationEvent) return CGPointZero;
         CGPoint location = CGEventGetLocation(locationEvent);
         CFRelease(locationEvent);
+        return location;
+    }
 
+    void postClick(CGEventSourceRef source, CGPoint location, int clickState) const {
         CGMouseButton button = kCGMouseButtonLeft;
         CGEventType downType = kCGEventLeftMouseDown;
         CGEventType upType = kCGEventLeftMouseUp;
@@ -206,13 +254,27 @@ private:
         CGEventRef down = CGEventCreateMouseEvent(source, downType, location, button);
         CGEventRef up = CGEventCreateMouseEvent(source, upType, location, button);
         if (down && up) {
-            CGEventSetIntegerValueField(down, kCGMouseEventClickState, 1);
-            CGEventSetIntegerValueField(up, kCGMouseEventClickState, 1);
+            CGEventSetIntegerValueField(down, kCGMouseEventClickState, clickState);
+            CGEventSetIntegerValueField(up, kCGMouseEventClickState, clickState);
             CGEventPost(kCGHIDEventTap, down);
             CGEventPost(kCGHIDEventTap, up);
         }
         if (down) CFRelease(down);
         if (up) CFRelease(up);
+    }
+
+    void postLogicalClick(CGEventSourceRef source, std::mt19937 &random) const {
+        CGPoint location = clickLocation();
+        const double jitter = jitterPixels_.load();
+        if (jitter > 0.0) {
+            std::uniform_real_distribution<double> distribution(-jitter, jitter);
+            location.x += distribution(random);
+            location.y += distribution(random);
+        }
+        postClick(source, location, 1);
+        if (clickPattern_.load() == 1) {
+            postClick(source, location, 2);
+        }
     }
 
     void run() {
@@ -227,10 +289,23 @@ private:
         mach_timebase_info_data_t timebase{};
         mach_timebase_info(&timebase);
         uint64_t nextDeadline = mach_absolute_time();
+        const uint64_t runStarted = nextDeadline;
         const uint64_t maximumStopLatency = ticksForNanoseconds(5'000'000.0, timebase);
+        std::mt19937 random(std::random_device{}());
+        uint64_t completedClicks = 0;
 
         while (running_.load()) {
-            postClick(source);
+            const int limitMode = limitMode_.load();
+            if (limitMode == 1 && completedClicks >= clickLimit_.load()) break;
+            if (limitMode == 2) {
+                const uint64_t durationTicks = ticksForNanoseconds(
+                    durationSeconds_.load() * 1'000'000'000.0, timebase);
+                if (mach_absolute_time() >= runStarted + durationTicks) break;
+            }
+
+            postLogicalClick(source, random);
+            ++completedClicks;
+            clickCount_.store(completedClicks);
 
             const double cps = cps_.load();
             const uint64_t interval = std::max<uint64_t>(
@@ -250,11 +325,21 @@ private:
         }
 
         CFRelease(source);
+        running_.store(false);
     }
 
     std::atomic<bool> running_{false};
     std::atomic<double> cps_{kDefaultCPS};
     std::atomic<int> mouseButton_{0};
+    std::atomic<int> locationMode_{0};
+    std::atomic<double> fixedX_{0.0};
+    std::atomic<double> fixedY_{0.0};
+    std::atomic<int> limitMode_{0};
+    std::atomic<uint64_t> clickLimit_{1'000};
+    std::atomic<double> durationSeconds_{60.0};
+    std::atomic<int> clickPattern_{0};
+    std::atomic<double> jitterPixels_{0.0};
+    std::atomic<uint64_t> clickCount_{0};
     std::thread worker_;
 };
 
@@ -262,6 +347,14 @@ NSTextField *Label(NSString *text) {
     NSTextField *label = [NSTextField labelWithString:text];
     label.translatesAutoresizingMaskIntoConstraints = NO;
     return label;
+}
+
+CGPoint CurrentPointerLocation() {
+    CGEventRef event = CGEventCreate(nullptr);
+    if (!event) return CGPointZero;
+    CGPoint location = CGEventGetLocation(event);
+    CFRelease(event);
+    return location;
 }
 
 }  // namespace
@@ -324,6 +417,14 @@ NSTextField *Label(NSString *text) {
     UInt32 _hotKeyModifiers;
     double _cps;
     int _mouseButton;
+    int _locationMode;
+    CGPoint _fixedLocation;
+    bool _hasFixedLocation;
+    int _limitMode;
+    uint64_t _clickLimit;
+    double _durationSeconds;
+    int _clickPattern;
+    double _jitterPixels;
 
     NSStatusItem *_statusItem;
     NSMenu *_menu;
@@ -332,13 +433,27 @@ NSTextField *Label(NSString *text) {
     NSMenuItem *_speedMenuItem;
     NSMenu *_speedMenu;
     NSMenu *_mouseMenu;
+    NSMenu *_patternMenu;
+    NSMenu *_locationMenu;
+    NSMenu *_limitMenu;
 
     NSWindow *_preferencesWindow;
     HotKeyRecorderButton *_recorderButton;
     NSTextField *_speedField;
     NSStepper *_speedStepper;
     NSPopUpButton *_mousePopup;
+    NSPopUpButton *_patternPopup;
+    NSPopUpButton *_locationPopup;
+    NSPopUpButton *_limitPopup;
+    NSButton *_captureButton;
+    NSTextField *_limitField;
+    NSStepper *_limitStepper;
+    NSTextField *_limitUnitLabel;
+    NSStepper *_jitterStepper;
+    NSTextField *_jitterValueLabel;
+    NSTextField *_fixedLocationLabel;
     NSTextField *_permissionLabel;
+    NSTimer *_statusTimer;
 }
 
 static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *userData) {
@@ -362,14 +477,40 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
         kMouseButtonPreference: @0,
         kHotKeyCodePreference: @(kDefaultKeyCode),
         kHotKeyModifiersPreference: @(kDefaultModifiers),
+        kLocationModePreference: @0,
+        kFixedXPreference: @0.0,
+        kFixedYPreference: @0.0,
+        kFixedLocationCapturedPreference: @NO,
+        kLimitModePreference: @0,
+        kClickLimitPreference: @1'000,
+        kDurationSecondsPreference: @60.0,
+        kClickPatternPreference: @0,
+        kJitterPixelsPreference: @0.0,
     }];
 
     _cps = NormalizeCPS([defaults doubleForKey:kCPSPreference]);
     _mouseButton = std::clamp((int)[defaults integerForKey:kMouseButtonPreference], 0, 2);
     _hotKeyCode = (UInt32)[defaults integerForKey:kHotKeyCodePreference];
     _hotKeyModifiers = (UInt32)[defaults integerForKey:kHotKeyModifiersPreference];
+    _locationMode = std::clamp((int)[defaults integerForKey:kLocationModePreference], 0, 1);
+    _fixedLocation = CGPointMake([defaults doubleForKey:kFixedXPreference],
+                                 [defaults doubleForKey:kFixedYPreference]);
+    _hasFixedLocation = [defaults boolForKey:kFixedLocationCapturedPreference] ||
+        _fixedLocation.x != 0.0 || _fixedLocation.y != 0.0;
+    _limitMode = std::clamp((int)[defaults integerForKey:kLimitModePreference], 0, 2);
+    _clickLimit = NormalizeClickLimit([defaults doubleForKey:kClickLimitPreference]);
+    _durationSeconds = NormalizeDuration([defaults doubleForKey:kDurationSecondsPreference]);
+    _clickPattern = std::clamp((int)[defaults integerForKey:kClickPatternPreference], 0, 1);
+    _jitterPixels = NormalizeJitter([defaults doubleForKey:kJitterPixelsPreference]);
     _engine.setClicksPerSecond(_cps);
     _engine.setMouseButton(_mouseButton);
+    _engine.setLocationMode(_locationMode);
+    _engine.setFixedLocation(_fixedLocation);
+    _engine.setLimitMode(_limitMode);
+    _engine.setClickLimit(_clickLimit);
+    _engine.setDurationSeconds(_durationSeconds);
+    _engine.setClickPattern(_clickPattern);
+    _engine.setJitterPixels(_jitterPixels);
 
     [self buildMenu];
     [self installHotKeyHandler];
@@ -378,6 +519,11 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
         _hotKeyModifiers = kDefaultModifiers;
         [self registerHotKeyCode:_hotKeyCode modifiers:_hotKeyModifiers];
     }
+    _statusTimer = [NSTimer scheduledTimerWithTimeInterval:0.1
+                                                     target:self
+                                                   selector:@selector(pollEngine:)
+                                                   userInfo:nil
+                                                    repeats:YES];
     [self updateUI];
 }
 
@@ -386,6 +532,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     _engine.stop();
     if (_hotKey) UnregisterEventHotKey(_hotKey);
     if (_hotKeyHandler) RemoveEventHandler(_hotKeyHandler);
+    [_statusTimer invalidate];
 }
 
 - (void)buildMenu {
@@ -434,6 +581,54 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     }
     mouseMenuItem.submenu = _mouseMenu;
     [_menu addItem:mouseMenuItem];
+
+    NSMenuItem *patternMenuItem = [[NSMenuItem alloc] initWithTitle:@"Click Pattern" action:nil keyEquivalent:@""];
+    _patternMenu = [[NSMenu alloc] initWithTitle:@"Click Pattern"];
+    NSArray<NSString *> *patternNames = @[@"Single click", @"Double click"];
+    for (NSInteger pattern = 0; pattern < 2; ++pattern) {
+        NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:patternNames[pattern]
+                                                       action:@selector(selectClickPattern:)
+                                                keyEquivalent:@""];
+        item.target = self;
+        item.tag = pattern;
+        [_patternMenu addItem:item];
+    }
+    patternMenuItem.submenu = _patternMenu;
+    [_menu addItem:patternMenuItem];
+
+    NSMenuItem *locationMenuItem = [[NSMenuItem alloc] initWithTitle:@"Click Location" action:nil keyEquivalent:@""];
+    _locationMenu = [[NSMenu alloc] initWithTitle:@"Click Location"];
+    NSArray<NSString *> *locationNames = @[@"Follow pointer", @"Fixed location"];
+    for (NSInteger mode = 0; mode < 2; ++mode) {
+        NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:locationNames[mode]
+                                                       action:@selector(selectLocationMode:)
+                                                keyEquivalent:@""];
+        item.target = self;
+        item.tag = mode;
+        [_locationMenu addItem:item];
+    }
+    [_locationMenu addItem:NSMenuItem.separatorItem];
+    NSMenuItem *captureLocation = [[NSMenuItem alloc] initWithTitle:@"Capture current pointer location"
+                                                               action:@selector(captureCurrentLocation:)
+                                                        keyEquivalent:@""];
+    captureLocation.target = self;
+    [_locationMenu addItem:captureLocation];
+    locationMenuItem.submenu = _locationMenu;
+    [_menu addItem:locationMenuItem];
+
+    NSMenuItem *limitMenuItem = [[NSMenuItem alloc] initWithTitle:@"Run Mode" action:nil keyEquivalent:@""];
+    _limitMenu = [[NSMenu alloc] initWithTitle:@"Run Mode"];
+    NSArray<NSString *> *limitNames = @[@"Repeat until stopped", @"Stop after click count…", @"Stop after duration…"];
+    for (NSInteger mode = 0; mode < 3; ++mode) {
+        NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:limitNames[mode]
+                                                       action:@selector(selectLimitMode:)
+                                                keyEquivalent:@""];
+        item.target = self;
+        item.tag = mode;
+        [_limitMenu addItem:item];
+    }
+    limitMenuItem.submenu = _limitMenu;
+    [_menu addItem:limitMenuItem];
     [_menu addItem:NSMenuItem.separatorItem];
 
     NSMenuItem *preferences = [[NSMenuItem alloc] initWithTitle:@"Preferences…" action:@selector(showPreferences:) keyEquivalent:@","];
@@ -530,12 +725,94 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     [self updateUI];
 }
 
+- (void)selectClickPattern:(NSMenuItem *)sender {
+    _clickPattern = std::clamp((int)sender.tag, 0, 1);
+    _engine.setClickPattern(_clickPattern);
+    [NSUserDefaults.standardUserDefaults setInteger:_clickPattern forKey:kClickPatternPreference];
+    if (_patternPopup) [_patternPopup selectItemAtIndex:_clickPattern];
+    [self updateUI];
+}
+
+- (void)applyLocationMode:(int)mode {
+    _locationMode = std::clamp(mode, 0, 1);
+    _engine.setLocationMode(_locationMode);
+    [NSUserDefaults.standardUserDefaults setInteger:_locationMode forKey:kLocationModePreference];
+    if (_locationPopup) [_locationPopup selectItemAtIndex:_locationMode];
+    [self refreshPreferencesControls];
+    [self updateUI];
+}
+
+- (void)selectLocationMode:(NSMenuItem *)sender {
+    [self applyLocationMode:(int)sender.tag];
+    if (sender.tag == 1 && !_hasFixedLocation) {
+        [self captureCurrentLocation:nil];
+    }
+}
+
+- (void)captureCurrentLocation:(id)sender {
+    (void)sender;
+    _fixedLocation = CurrentPointerLocation();
+    _engine.setFixedLocation(_fixedLocation);
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    [defaults setDouble:_fixedLocation.x forKey:kFixedXPreference];
+    [defaults setDouble:_fixedLocation.y forKey:kFixedYPreference];
+    [defaults setBool:YES forKey:kFixedLocationCapturedPreference];
+    _hasFixedLocation = YES;
+    [self refreshPreferencesControls];
+    [self updateUI];
+}
+
+- (void)applyLimitMode:(int)mode {
+    _limitMode = std::clamp(mode, 0, 2);
+    _engine.setLimitMode(_limitMode);
+    [NSUserDefaults.standardUserDefaults setInteger:_limitMode forKey:kLimitModePreference];
+    [self refreshPreferencesControls];
+    [self updateUI];
+}
+
+- (void)selectLimitMode:(NSMenuItem *)sender {
+    [self applyLimitMode:(int)sender.tag];
+    if (sender.tag != 0) [self showPreferences:nil];
+}
+
+- (void)applyClickLimit:(double)value {
+    _clickLimit = NormalizeClickLimit(value);
+    _engine.setClickLimit(_clickLimit);
+    [NSUserDefaults.standardUserDefaults setDouble:(double)_clickLimit forKey:kClickLimitPreference];
+    [self refreshPreferencesControls];
+    [self updateUI];
+}
+
+- (void)applyDuration:(double)value {
+    _durationSeconds = NormalizeDuration(value);
+    _engine.setDurationSeconds(_durationSeconds);
+    [NSUserDefaults.standardUserDefaults setDouble:_durationSeconds forKey:kDurationSecondsPreference];
+    [self refreshPreferencesControls];
+    [self updateUI];
+}
+
+- (void)applyJitter:(double)value {
+    _jitterPixels = NormalizeJitter(value);
+    _engine.setJitterPixels(_jitterPixels);
+    [NSUserDefaults.standardUserDefaults setDouble:_jitterPixels forKey:kJitterPixelsPreference];
+    [self refreshPreferencesControls];
+    [self updateUI];
+}
+
+- (void)pollEngine:(NSTimer *)timer {
+    (void)timer;
+    [self updateUI];
+}
+
 - (void)updateUI {
     const BOOL running = _engine.isRunning();
     NSString *speed = _cps >= kMaximumCPS ? @"Maximum · 5,000 CPS" :
         [NSString stringWithFormat:@"%.0f CPS", _cps];
-    _statusMenuItem.title = running ? [NSString stringWithFormat:@"● Clicking · %@", speed] :
-                                          [NSString stringWithFormat:@"○ Idle · %@", speed];
+    NSString *count = [NSString stringWithFormat:@"%llu clicks", static_cast<unsigned long long>(_engine.clickCount())];
+    NSString *runMode = _limitMode == 1 ? [NSString stringWithFormat:@" · %llu max", static_cast<unsigned long long>(_clickLimit)] :
+        (_limitMode == 2 ? [NSString stringWithFormat:@" · %.0fs max", _durationSeconds] : @"");
+    _statusMenuItem.title = running ? [NSString stringWithFormat:@"● Clicking · %@ · %@%@", speed, count, runMode] :
+                                          [NSString stringWithFormat:@"○ Idle · %@ · %@%@", speed, count, runMode];
     _toggleMenuItem.title = [NSString stringWithFormat:@"%@ Clicking (%@)",
         running ? @"Stop" : @"Start", ShortcutDisplay(_hotKeyCode, _hotKeyModifiers)];
     _speedMenuItem.title = [NSString stringWithFormat:@"Speed: %@", speed];
@@ -545,6 +822,15 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     }
     for (NSMenuItem *item in _mouseMenu.itemArray) {
         item.state = item.tag == _mouseButton ? NSControlStateValueOn : NSControlStateValueOff;
+    }
+    for (NSMenuItem *item in _patternMenu.itemArray) {
+        item.state = item.tag == _clickPattern ? NSControlStateValueOn : NSControlStateValueOff;
+    }
+    for (NSMenuItem *item in _locationMenu.itemArray) {
+        item.state = item.tag < 2 && item.tag == _locationMode ? NSControlStateValueOn : NSControlStateValueOff;
+    }
+    for (NSMenuItem *item in _limitMenu.itemArray) {
+        item.state = item.tag <= 2 && item.tag == _limitMode ? NSControlStateValueOn : NSControlStateValueOff;
     }
 
     NSString *symbol = running ? @"bolt.circle.fill" : @"cursorarrow.click.2";
@@ -564,6 +850,44 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     }
 }
 
+- (void)refreshPreferencesControls {
+    if (!_preferencesWindow) return;
+    [_patternPopup selectItemAtIndex:_clickPattern];
+    [_locationPopup selectItemAtIndex:_locationMode];
+    [_limitPopup selectItemAtIndex:_limitMode];
+    _captureButton.enabled = YES;
+
+    const double limitMaximum = _limitMode == 1 ? static_cast<double>(kMaximumClickLimit) : kMaximumDurationSeconds;
+    _limitStepper.maxValue = limitMaximum;
+    if (NSNumberFormatter *formatter = (NSNumberFormatter *)_limitField.formatter) {
+        formatter.maximum = @(limitMaximum);
+    }
+    if (_limitMode == 1) {
+        _limitField.doubleValue = (double)_clickLimit;
+        _limitStepper.doubleValue = (double)_clickLimit;
+        _limitUnitLabel.stringValue = @"clicks";
+        _limitField.enabled = YES;
+        _limitStepper.enabled = YES;
+    } else if (_limitMode == 2) {
+        _limitField.doubleValue = _durationSeconds;
+        _limitStepper.doubleValue = _durationSeconds;
+        _limitUnitLabel.stringValue = @"seconds";
+        _limitField.enabled = YES;
+        _limitStepper.enabled = YES;
+    } else {
+        _limitField.stringValue = @"—";
+        _limitStepper.doubleValue = 1;
+        _limitUnitLabel.stringValue = @"off";
+        _limitField.enabled = NO;
+        _limitStepper.enabled = NO;
+    }
+    _jitterStepper.doubleValue = _jitterPixels;
+    _jitterValueLabel.stringValue = [NSString stringWithFormat:@"%.0f px", _jitterPixels];
+    _fixedLocationLabel.stringValue = _hasFixedLocation ?
+        [NSString stringWithFormat:@"Fixed: (%.0f, %.0f)", _fixedLocation.x, _fixedLocation.y] :
+        @"Fixed: (not captured)";
+}
+
 - (void)showPreferences:(id)sender {
     (void)sender;
     if (!_preferencesWindow) [self buildPreferencesWindow];
@@ -571,6 +895,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     _speedStepper.doubleValue = _cps;
     [_mousePopup selectItemAtIndex:_mouseButton];
     _recorderButton.title = ShortcutDisplay(_hotKeyCode, _hotKeyModifiers);
+    [self refreshPreferencesControls];
     [self updateUI];
     [NSApp activateIgnoringOtherApps:YES];
     [_preferencesWindow center];
@@ -579,7 +904,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
 
 - (void)buildPreferencesWindow {
     _preferencesWindow = [[NSWindow alloc]
-        initWithContentRect:NSMakeRect(0, 0, 460, 285)
+        initWithContentRect:NSMakeRect(0, 0, 560, 500)
                   styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
                     backing:NSBackingStoreBuffered
                       defer:NO];
@@ -587,7 +912,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     _preferencesWindow.releasedWhenClosed = NO;
     _preferencesWindow.delegate = self;
 
-    NSTextField *intro = Label(@"Fast, native clicking at the current pointer location.");
+    NSTextField *intro = Label(@"Fast, native clicking with predictable limits and target control.");
     intro.font = [NSFont systemFontOfSize:13];
 
     NSTextField *shortcutLabel = Label(@"Start / stop shortcut:");
@@ -631,10 +956,87 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     _mousePopup.action = @selector(mousePopupChanged:);
     [_mousePopup.widthAnchor constraintGreaterThanOrEqualToConstant:175].active = YES;
 
+    NSTextField *patternLabel = Label(@"Click pattern:");
+    _patternPopup = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
+    _patternPopup.translatesAutoresizingMaskIntoConstraints = NO;
+    [_patternPopup addItemsWithTitles:@[@"Single click", @"Double click"]];
+    _patternPopup.target = self;
+    _patternPopup.action = @selector(patternPopupChanged:);
+    [_patternPopup.widthAnchor constraintGreaterThanOrEqualToConstant:175].active = YES;
+
+    NSTextField *locationLabel = Label(@"Click location:");
+    _locationPopup = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
+    _locationPopup.translatesAutoresizingMaskIntoConstraints = NO;
+    [_locationPopup addItemsWithTitles:@[@"Follow pointer", @"Fixed location"]];
+    _locationPopup.target = self;
+    _locationPopup.action = @selector(locationPopupChanged:);
+    [_locationPopup.widthAnchor constraintGreaterThanOrEqualToConstant:175].active = YES;
+    _captureButton = [NSButton buttonWithTitle:@"Capture pointer" target:self action:@selector(captureCurrentLocation:)];
+    _captureButton.translatesAutoresizingMaskIntoConstraints = NO;
+    _fixedLocationLabel = Label(@"Fixed: (not captured)");
+    _fixedLocationLabel.font = [NSFont monospacedDigitSystemFontOfSize:11 weight:NSFontWeightRegular];
+    _fixedLocationLabel.textColor = NSColor.secondaryLabelColor;
+    NSStackView *locationControls = [NSStackView stackViewWithViews:@[_locationPopup, _captureButton, _fixedLocationLabel]];
+    locationControls.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    locationControls.spacing = 8;
+
+    NSTextField *runModeLabel = Label(@"Run mode:");
+    _limitPopup = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
+    _limitPopup.translatesAutoresizingMaskIntoConstraints = NO;
+    [_limitPopup addItemsWithTitles:@[@"Repeat until stopped", @"Stop after click count", @"Stop after duration"]];
+    _limitPopup.target = self;
+    _limitPopup.action = @selector(limitPopupChanged:);
+    [_limitPopup.widthAnchor constraintGreaterThanOrEqualToConstant:220].active = YES;
+
+    NSTextField *limitLabel = Label(@"Stop after:");
+    _limitField = [[NSTextField alloc] initWithFrame:NSZeroRect];
+    _limitField.translatesAutoresizingMaskIntoConstraints = NO;
+    _limitField.alignment = NSTextAlignmentRight;
+    _limitField.delegate = self;
+    _limitField.target = self;
+    _limitField.action = @selector(limitFieldChanged:);
+    NSNumberFormatter *limitFormatter = [[NSNumberFormatter alloc] init];
+    limitFormatter.allowsFloats = NO;
+    limitFormatter.minimum = @1;
+    limitFormatter.maximum = @(kMaximumClickLimit);
+    _limitField.formatter = limitFormatter;
+    [_limitField.widthAnchor constraintEqualToConstant:110].active = YES;
+    _limitStepper = [NSStepper new];
+    _limitStepper.translatesAutoresizingMaskIntoConstraints = NO;
+    _limitStepper.minValue = 1;
+    _limitStepper.maxValue = kMaximumClickLimit;
+    _limitStepper.increment = 1;
+    _limitStepper.target = self;
+    _limitStepper.action = @selector(limitStepperChanged:);
+    _limitUnitLabel = Label(@"clicks");
+    _limitUnitLabel.textColor = NSColor.secondaryLabelColor;
+    NSStackView *limitControls = [NSStackView stackViewWithViews:@[_limitField, _limitStepper, _limitUnitLabel]];
+    limitControls.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    limitControls.spacing = 6;
+
+    NSTextField *jitterLabel = Label(@"Pointer jitter:");
+    _jitterStepper = [NSStepper new];
+    _jitterStepper.translatesAutoresizingMaskIntoConstraints = NO;
+    _jitterStepper.minValue = 0;
+    _jitterStepper.maxValue = kMaximumJitterPixels;
+    _jitterStepper.increment = 1;
+    _jitterStepper.target = self;
+    _jitterStepper.action = @selector(jitterStepperChanged:);
+    _jitterValueLabel = Label(@"0 px");
+    _jitterValueLabel.textColor = NSColor.secondaryLabelColor;
+    NSStackView *jitterControls = [NSStackView stackViewWithViews:@[_jitterStepper, _jitterValueLabel]];
+    jitterControls.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    jitterControls.spacing = 8;
+
     NSGridView *grid = [NSGridView gridViewWithViews:@[
         @[shortcutLabel, _recorderButton],
         @[speedLabel, speedControls],
         @[mouseLabel, _mousePopup],
+        @[patternLabel, _patternPopup],
+        @[locationLabel, locationControls],
+        @[runModeLabel, _limitPopup],
+        @[limitLabel, limitControls],
+        @[jitterLabel, jitterControls],
     ]];
     grid.translatesAutoresizingMaskIntoConstraints = NO;
     grid.rowSpacing = 12;
@@ -642,7 +1044,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     grid.xPlacement = NSGridCellPlacementLeading;
     grid.yPlacement = NSGridCellPlacementCenter;
 
-    NSTextField *speedHint = Label(@"1–5,000 CPS. Changes apply immediately while clicking.");
+    NSTextField *speedHint = Label(@"1–5,000 CPS. Changes apply immediately while clicking. Limits stop cleanly at the next safe boundary.");
     speedHint.font = [NSFont systemFontOfSize:11];
     speedHint.textColor = NSColor.secondaryLabelColor;
 
@@ -675,9 +1077,11 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
         [root.leadingAnchor constraintEqualToAnchor:_preferencesWindow.contentView.leadingAnchor constant:24],
         [root.trailingAnchor constraintEqualToAnchor:_preferencesWindow.contentView.trailingAnchor constant:-24],
         [root.topAnchor constraintEqualToAnchor:_preferencesWindow.contentView.topAnchor constant:22],
+        [root.bottomAnchor constraintLessThanOrEqualToAnchor:_preferencesWindow.contentView.bottomAnchor constant:-22],
         [permissionRow.widthAnchor constraintEqualToAnchor:root.widthAnchor],
         [buttonRow.widthAnchor constraintEqualToAnchor:root.widthAnchor],
     ]];
+    [self refreshPreferencesControls];
 }
 
 - (void)beginShortcutRecording:(id)sender {
@@ -727,8 +1131,42 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     [self applyMouseButton:(int)sender.indexOfSelectedItem];
 }
 
+- (void)patternPopupChanged:(NSPopUpButton *)sender {
+    _clickPattern = std::clamp((int)sender.indexOfSelectedItem, 0, 1);
+    _engine.setClickPattern(_clickPattern);
+    [NSUserDefaults.standardUserDefaults setInteger:_clickPattern forKey:kClickPatternPreference];
+    [self updateUI];
+}
+
+- (void)locationPopupChanged:(NSPopUpButton *)sender {
+    [self applyLocationMode:(int)sender.indexOfSelectedItem];
+    if (_locationMode == 1 && !_hasFixedLocation) {
+        [self captureCurrentLocation:nil];
+    }
+}
+
+- (void)limitPopupChanged:(NSPopUpButton *)sender {
+    [self applyLimitMode:(int)sender.indexOfSelectedItem];
+}
+
+- (void)limitFieldChanged:(id)sender {
+    (void)sender;
+    if (_limitMode == 1) [self applyClickLimit:_limitField.doubleValue];
+    if (_limitMode == 2) [self applyDuration:_limitField.doubleValue];
+}
+
+- (void)limitStepperChanged:(NSStepper *)sender {
+    if (_limitMode == 1) [self applyClickLimit:sender.doubleValue];
+    if (_limitMode == 2) [self applyDuration:sender.doubleValue];
+}
+
+- (void)jitterStepperChanged:(NSStepper *)sender {
+    [self applyJitter:sender.doubleValue];
+}
+
 - (void)controlTextDidEndEditing:(NSNotification *)notification {
     if (notification.object == _speedField) [self applySpeed:_speedField.doubleValue];
+    if (notification.object == _limitField) [self limitFieldChanged:_limitField];
 }
 
 - (void)closePreferences:(id)sender {
@@ -766,10 +1204,14 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
 int RunSelfTests() {
     @autoreleasepool {
         if (NormalizeCPS(-10) != 1 || NormalizeCPS(10000) != 5000 || NormalizeCPS(24.6) != 25) return 1;
-        if (![ShortcutDisplay(kVK_ANSI_C, controlKey | optionKey) isEqualToString:@"⌃⌥C"]) return 2;
-        if (![ShortcutDisplay(kVK_F6, 0) isEqualToString:@"F6"]) return 3;
+        if (NormalizeClickLimit(-1) != 1 || NormalizeClickLimit(10'000'001) != 10'000'000 ||
+            NormalizeClickLimit(24.6) != 25) return 2;
+        if (NormalizeDuration(0) != 1 || NormalizeDuration(100'000) != 86'400 || NormalizeDuration(24.6) != 25) return 3;
+        if (NormalizeJitter(-1) != 0 || NormalizeJitter(100) != 20 || NormalizeJitter(4.6) != 5) return 4;
+        if (![ShortcutDisplay(kVK_ANSI_C, controlKey | optionKey) isEqualToString:@"⌃⌥C"]) return 5;
+        if (![ShortcutDisplay(kVK_F6, 0) isEqualToString:@"F6"]) return 6;
         if (CarbonModifiersFromEvent(NSEventModifierFlagCommand | NSEventModifierFlagShift) !=
-            (cmdKey | shiftKey)) return 4;
+            (cmdKey | shiftKey)) return 7;
         NSLog(@"SymClick self-test passed");
     }
     return 0;

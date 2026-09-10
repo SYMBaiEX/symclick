@@ -7,7 +7,8 @@
 SymClick is a tiny native macOS menu-bar autoclicker. It uses AppKit for the menu,
 Carbon for a global start/stop hotkey, and a dedicated Objective-C++/Core Graphics
 click engine. There are no third-party dependencies, telemetry, network requests,
-or background services.
+or background services. The v1.1 engine adds bounded runs, fixed targets, double
+clicks, optional jitter, and live click counts without making the app harder to stop.
 
 ## Features
 
@@ -15,7 +16,12 @@ or background services.
 - Shortcut recorder for choosing your own key combination
 - Configurable speed from 1 to 5,000 clicks per second
 - Left, right, and middle mouse buttons
-- Changes to speed and mouse button apply while the clicker is running
+- Single- or double-click patterns
+- Follow the pointer or capture a fixed screen location
+- Repeat until stopped, stop after a click count (1–10,000,000), or stop after a duration (1 second–24 hours)
+- Optional bounded pointer jitter (0–20 pixels)
+- Live click count and run-limit status in the menu bar
+- Changes to settings apply while the clicker is running
 - Native menu-bar status with no Dock icon
 - Universal Apple Silicon and Intel build
 
@@ -24,7 +30,7 @@ or background services.
 Download the universal macOS archive from [GitHub Releases](https://github.com/SYMBaiEX/symclick/releases/latest),
 extract it, and move `SymClick.app` to `/Applications`.
 
-The v1.0.0 binary is Developer ID–signed with hardened runtime but is not notarized.
+The v1.1.0 binary is Developer ID–signed with hardened runtime but is not notarized.
 On first launch, macOS may ask you to confirm it in **System Settings → Privacy &
 Security → Open Anyway**. Release checksums are published beside each archive.
 
@@ -59,10 +65,13 @@ Accessibility**.
 
 ## Usage
 
-1. Put the pointer over the target.
-2. Press `⌃⌥C` to start.
-3. Press `⌃⌥C` again to stop.
-4. Use **Preferences…** to record another shortcut or enter an exact speed.
+1. Open **Preferences…** and choose a shortcut, speed, button, pattern, location, and optional run limit.
+2. For a fixed target, put the pointer over it and choose **Capture pointer**.
+3. Press `⌃⌥C` (or choose **Start Clicking**) to begin.
+4. Press the same shortcut again to stop, or let the configured click-count/duration limit stop the run.
+
+The menu exposes the common speed, pattern, location, and run-mode controls so you
+can make quick changes without opening Preferences. A new run resets the live count.
 
 The 5,000 CPS setting is intentionally aggressive. Real throughput depends on the
 target app and macOS event handling. Start lower, and keep the stop shortcut easy to
@@ -77,6 +86,9 @@ make verify
 make package
 make clean
 ```
+
+The release design and deferred roadmap are documented in
+[`docs/NEXT_VERSION_PLAN.md`](docs/NEXT_VERSION_PLAN.md).
 
 The complete app is implemented in [`src/main.mm`](src/main.mm). The release build
 uses `-O3`, link-time optimization, and produces one `.app` bundle. Local builds are
