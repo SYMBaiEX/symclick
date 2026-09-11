@@ -26,9 +26,18 @@ This checklist is for project maintainers.
    shasum -a 256 -c build/dist/SymClick-v*-macOS-universal.zip.sha256
    ```
 
-6. When notarization credentials are available, submit the archive with
-   `xcrun notarytool`, staple the accepted ticket to the app, and recreate the
-   archive and checksum. Never describe a release as notarized without an accepted
-   submission and a successful `stapler validate` result.
-7. Commit the release metadata, create the matching signed tag, push, and publish a
+6. Submit the archive and wait for Apple’s decision:
+
+   ```sh
+   xcrun notarytool submit build/dist/SymClick-v<version>-macOS-universal.zip \
+     --keychain-profile symclick-notary --wait
+   xcrun stapler staple build/SymClick.app
+   xcrun stapler validate build/SymClick.app
+   spctl -a -vv build/SymClick.app
+   ```
+
+   Recreate the archive and checksum after stapling. Never describe a release as
+   notarized without an `Accepted` submission, successful stapler validation, and
+   `source=Notarized Developer ID` from `spctl`.
+7. Commit the release metadata, create the matching tag, push, and publish a
    GitHub release containing the archive and checksum.

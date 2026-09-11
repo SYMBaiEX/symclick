@@ -17,6 +17,7 @@ All notable changes to SymClick are documented here. This project follows
 
 - The click engine keeps the stop path responsive while sustaining aggressive CPS.
 - Settings and run state are normalized, persisted, and reflected immediately.
+- The universal Developer ID release is notarized and stapled for a clean Gatekeeper launch.
 - Release documentation now includes the v1.1 product plan and acceptance gates.
 
 ## [1.0.0] - 2026-09-05

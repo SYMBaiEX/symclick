@@ -59,8 +59,9 @@ cloud account, a heavy UI, or an unbounded mode that can strand a user in a game
 
 ## Hard wins intentionally deferred
 
-- Notarization and stapling require the maintainer’s Apple notary credentials; the
-  release is signed and hardened, but never described as notarized without proof.
+- Notarization is complete for v1.1.0: Apple accepted the archive, the ticket was
+  stapled, and `spctl` reports `source=Notarized Developer ID`. Future releases must
+  keep the same credentialed submit, staple, and validate gate.
 - A Login Item should be opt-in and requires a separate lifecycle/permissions review.
 - Per-app targets, profiles, overlays, analytics, and scripted sequences add state and
   permission complexity; they belong behind a measured user need.

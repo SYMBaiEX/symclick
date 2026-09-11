@@ -30,9 +30,8 @@ clicks, optional jitter, and live click counts without making the app harder to 
 Download the universal macOS archive from [GitHub Releases](https://github.com/SYMBaiEX/symclick/releases/latest),
 extract it, and move `SymClick.app` to `/Applications`.
 
-The v1.1.0 binary is Developer ID–signed with hardened runtime but is not notarized.
-On first launch, macOS may ask you to confirm it in **System Settings → Privacy &
-Security → Open Anyway**. Release checksums are published beside each archive.
+The v1.1.0 binary is Developer ID–signed with hardened runtime, notarized, and
+stapled. Release checksums are published beside each archive.
 
 ### Build from source
 
