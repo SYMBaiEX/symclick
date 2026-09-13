@@ -3,6 +3,19 @@
 All notable changes to SymClick are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-09-13
+
+### Added
+
+- Optional 0–10 second start delay with a clear arming state and cancellation path.
+- Reset Defaults action for recovering from a confusing or conflicting configuration.
+- `--diagnose` and `--smoke-test` commands plus `make diagnostics`/`make smoke` release checks.
+
+### Improved
+
+- The status item distinguishes an armed countdown from active clicking.
+- Maintainer documentation now requires a real launch smoke test before publication.
+
 ## [1.1.0] - 2026-09-10
 
 ### Added
@@ -32,5 +45,6 @@ All notable changes to SymClick are documented here. This project follows
 - Universal Apple Silicon and Intel binary.
 - Accessibility permission guidance and fail-safe stop behavior.
 
+[1.2.0]: https://github.com/SYMBaiEX/symclick/releases/tag/v1.2.0
 [1.1.0]: https://github.com/SYMBaiEX/symclick/releases/tag/v1.1.0
 [1.0.0]: https://github.com/SYMBaiEX/symclick/releases/tag/v1.0.0

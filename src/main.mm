@@ -9,11 +9,13 @@
 #include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <mach/mach_time.h>
 #include <pthread.h>
 #include <random>
 #include <string>
 #include <thread>
+#include <sys/utsname.h>
 
 namespace {
 
@@ -23,6 +25,8 @@ constexpr double kMaximumCPS = 5000.0;
 constexpr uint64_t kMaximumClickLimit = 10'000'000;
 constexpr double kMaximumDurationSeconds = 86'400.0;
 constexpr double kMaximumJitterPixels = 20.0;
+constexpr double kDefaultStartDelaySeconds = 0.0;
+constexpr double kMaximumStartDelaySeconds = 10.0;
 constexpr UInt32 kDefaultKeyCode = kVK_ANSI_C;
 constexpr UInt32 kDefaultModifiers = controlKey | optionKey;
 constexpr OSType kHotKeySignature = 0x53594D43;  // "SYMC"
@@ -41,6 +45,7 @@ NSString *const kClickLimitPreference = @"clickLimit";
 NSString *const kDurationSecondsPreference = @"durationSeconds";
 NSString *const kClickPatternPreference = @"clickPattern";
 NSString *const kJitterPixelsPreference = @"jitterPixels";
+NSString *const kStartDelayPreference = @"startDelaySeconds";
 
 double NormalizeCPS(double value) {
     if (!std::isfinite(value)) {
@@ -64,6 +69,11 @@ double NormalizeDuration(double value) {
 double NormalizeJitter(double value) {
     if (!std::isfinite(value)) return 0.0;
     return std::clamp(std::round(value), 0.0, kMaximumJitterPixels);
+}
+
+double NormalizeStartDelay(double value) {
+    if (!std::isfinite(value)) return kDefaultStartDelaySeconds;
+    return std::clamp(std::round(value), 0.0, kMaximumStartDelaySeconds);
 }
 
 NSString *KeyName(UInt32 keyCode) {
@@ -199,7 +209,9 @@ public:
     void setDurationSeconds(double seconds) { durationSeconds_.store(NormalizeDuration(seconds)); }
     void setClickPattern(int pattern) { clickPattern_.store(std::clamp(pattern, 0, 1)); }
     void setJitterPixels(double pixels) { jitterPixels_.store(NormalizeJitter(pixels)); }
+    void setStartDelaySeconds(double seconds) { startDelaySeconds_.store(NormalizeStartDelay(seconds)); }
     bool isRunning() const { return running_.load(); }
+    bool isArming() const { return arming_.load(); }
     uint64_t clickCount() const { return clickCount_.load(); }
 
     void start() {
@@ -207,11 +219,13 @@ public:
         if (!running_.compare_exchange_strong(expected, true)) return;
         if (worker_.joinable()) worker_.join();
         clickCount_.store(0);
+        arming_.store(true);
         worker_ = std::thread([this] { run(); });
     }
 
     void stop() {
         running_.store(false);
+        arming_.store(false);
         if (worker_.joinable()) worker_.join();
     }
 
@@ -282,6 +296,7 @@ private:
         CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStateCombinedSessionState);
         if (!source) {
             running_.store(false);
+            arming_.store(false);
             return;
         }
         CGEventSourceSetLocalEventsSuppressionInterval(source, 0.0);
@@ -289,10 +304,24 @@ private:
         mach_timebase_info_data_t timebase{};
         mach_timebase_info(&timebase);
         uint64_t nextDeadline = mach_absolute_time();
-        const uint64_t runStarted = nextDeadline;
         const uint64_t maximumStopLatency = ticksForNanoseconds(5'000'000.0, timebase);
         std::mt19937 random(std::random_device{}());
         uint64_t completedClicks = 0;
+
+        const uint64_t armingDeadline = nextDeadline + ticksForNanoseconds(
+            startDelaySeconds_.load() * 1'000'000'000.0, timebase);
+        while (running_.load() && nextDeadline < armingDeadline) {
+            mach_wait_until(std::min(armingDeadline, nextDeadline + maximumStopLatency));
+            nextDeadline = mach_absolute_time();
+        }
+        arming_.store(false);
+        if (!running_.load()) {
+            CFRelease(source);
+            return;
+        }
+
+        nextDeadline = mach_absolute_time();
+        const uint64_t runStarted = nextDeadline;
 
         while (running_.load()) {
             const int limitMode = limitMode_.load();
@@ -339,6 +368,8 @@ private:
     std::atomic<double> durationSeconds_{60.0};
     std::atomic<int> clickPattern_{0};
     std::atomic<double> jitterPixels_{0.0};
+    std::atomic<double> startDelaySeconds_{kDefaultStartDelaySeconds};
+    std::atomic<bool> arming_{false};
     std::atomic<uint64_t> clickCount_{0};
     std::thread worker_;
 };
@@ -425,6 +456,7 @@ CGPoint CurrentPointerLocation() {
     double _durationSeconds;
     int _clickPattern;
     double _jitterPixels;
+    double _startDelaySeconds;
 
     NSStatusItem *_statusItem;
     NSMenu *_menu;
@@ -451,6 +483,8 @@ CGPoint CurrentPointerLocation() {
     NSTextField *_limitUnitLabel;
     NSStepper *_jitterStepper;
     NSTextField *_jitterValueLabel;
+    NSStepper *_startDelayStepper;
+    NSTextField *_startDelayValueLabel;
     NSTextField *_fixedLocationLabel;
     NSTextField *_permissionLabel;
     NSTimer *_statusTimer;
@@ -486,6 +520,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
         kDurationSecondsPreference: @60.0,
         kClickPatternPreference: @0,
         kJitterPixelsPreference: @0.0,
+        kStartDelayPreference: @(kDefaultStartDelaySeconds),
     }];
 
     _cps = NormalizeCPS([defaults doubleForKey:kCPSPreference]);
@@ -502,6 +537,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     _durationSeconds = NormalizeDuration([defaults doubleForKey:kDurationSecondsPreference]);
     _clickPattern = std::clamp((int)[defaults integerForKey:kClickPatternPreference], 0, 1);
     _jitterPixels = NormalizeJitter([defaults doubleForKey:kJitterPixelsPreference]);
+    _startDelaySeconds = NormalizeStartDelay([defaults doubleForKey:kStartDelayPreference]);
     _engine.setClicksPerSecond(_cps);
     _engine.setMouseButton(_mouseButton);
     _engine.setLocationMode(_locationMode);
@@ -511,6 +547,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     _engine.setDurationSeconds(_durationSeconds);
     _engine.setClickPattern(_clickPattern);
     _engine.setJitterPixels(_jitterPixels);
+    _engine.setStartDelaySeconds(_startDelaySeconds);
 
     [self buildMenu];
     [self installHotKeyHandler];
@@ -726,7 +763,11 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
 }
 
 - (void)selectClickPattern:(NSMenuItem *)sender {
-    _clickPattern = std::clamp((int)sender.tag, 0, 1);
+    [self applyClickPattern:(int)sender.tag];
+}
+
+- (void)applyClickPattern:(int)pattern {
+    _clickPattern = std::clamp(pattern, 0, 1);
     _engine.setClickPattern(_clickPattern);
     [NSUserDefaults.standardUserDefaults setInteger:_clickPattern forKey:kClickPatternPreference];
     if (_patternPopup) [_patternPopup selectItemAtIndex:_clickPattern];
@@ -799,6 +840,14 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     [self updateUI];
 }
 
+- (void)applyStartDelay:(double)value {
+    _startDelaySeconds = NormalizeStartDelay(value);
+    _engine.setStartDelaySeconds(_startDelaySeconds);
+    [NSUserDefaults.standardUserDefaults setDouble:_startDelaySeconds forKey:kStartDelayPreference];
+    [self refreshPreferencesControls];
+    [self updateUI];
+}
+
 - (void)pollEngine:(NSTimer *)timer {
     (void)timer;
     [self updateUI];
@@ -806,15 +855,17 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
 
 - (void)updateUI {
     const BOOL running = _engine.isRunning();
+    const BOOL arming = _engine.isArming();
     NSString *speed = _cps >= kMaximumCPS ? @"Maximum · 5,000 CPS" :
         [NSString stringWithFormat:@"%.0f CPS", _cps];
     NSString *count = [NSString stringWithFormat:@"%llu clicks", static_cast<unsigned long long>(_engine.clickCount())];
     NSString *runMode = _limitMode == 1 ? [NSString stringWithFormat:@" · %llu max", static_cast<unsigned long long>(_clickLimit)] :
         (_limitMode == 2 ? [NSString stringWithFormat:@" · %.0fs max", _durationSeconds] : @"");
-    _statusMenuItem.title = running ? [NSString stringWithFormat:@"● Clicking · %@ · %@%@", speed, count, runMode] :
-                                          [NSString stringWithFormat:@"○ Idle · %@ · %@%@", speed, count, runMode];
+    _statusMenuItem.title = arming ? [NSString stringWithFormat:@"◐ Starting · %.0fs delay · %@", _startDelaySeconds, ShortcutDisplay(_hotKeyCode, _hotKeyModifiers)] :
+        (running ? [NSString stringWithFormat:@"● Clicking · %@ · %@%@", speed, count, runMode] :
+                   [NSString stringWithFormat:@"○ Idle · %@ · %@%@", speed, count, runMode]);
     _toggleMenuItem.title = [NSString stringWithFormat:@"%@ Clicking (%@)",
-        running ? @"Stop" : @"Start", ShortcutDisplay(_hotKeyCode, _hotKeyModifiers)];
+        arming ? @"Cancel" : (running ? @"Stop" : @"Start"), ShortcutDisplay(_hotKeyCode, _hotKeyModifiers)];
     _speedMenuItem.title = [NSString stringWithFormat:@"Speed: %@", speed];
 
     for (NSMenuItem *item in _speedMenu.itemArray) {
@@ -883,6 +934,9 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     }
     _jitterStepper.doubleValue = _jitterPixels;
     _jitterValueLabel.stringValue = [NSString stringWithFormat:@"%.0f px", _jitterPixels];
+    _startDelayStepper.doubleValue = _startDelaySeconds;
+    _startDelayValueLabel.stringValue = _startDelaySeconds == 0.0 ? @"instant" :
+        [NSString stringWithFormat:@"%.0f sec", _startDelaySeconds];
     _fixedLocationLabel.stringValue = _hasFixedLocation ?
         [NSString stringWithFormat:@"Fixed: (%.0f, %.0f)", _fixedLocation.x, _fixedLocation.y] :
         @"Fixed: (not captured)";
@@ -904,7 +958,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
 
 - (void)buildPreferencesWindow {
     _preferencesWindow = [[NSWindow alloc]
-        initWithContentRect:NSMakeRect(0, 0, 560, 500)
+        initWithContentRect:NSMakeRect(0, 0, 560, 550)
                   styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
                     backing:NSBackingStoreBuffered
                       defer:NO];
@@ -1028,6 +1082,20 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     jitterControls.orientation = NSUserInterfaceLayoutOrientationHorizontal;
     jitterControls.spacing = 8;
 
+    NSTextField *startDelayLabel = Label(@"Start delay:");
+    _startDelayStepper = [NSStepper new];
+    _startDelayStepper.translatesAutoresizingMaskIntoConstraints = NO;
+    _startDelayStepper.minValue = 0;
+    _startDelayStepper.maxValue = kMaximumStartDelaySeconds;
+    _startDelayStepper.increment = 1;
+    _startDelayStepper.target = self;
+    _startDelayStepper.action = @selector(startDelayStepperChanged:);
+    _startDelayValueLabel = Label(@"instant");
+    _startDelayValueLabel.textColor = NSColor.secondaryLabelColor;
+    NSStackView *startDelayControls = [NSStackView stackViewWithViews:@[_startDelayStepper, _startDelayValueLabel]];
+    startDelayControls.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    startDelayControls.spacing = 8;
+
     NSGridView *grid = [NSGridView gridViewWithViews:@[
         @[shortcutLabel, _recorderButton],
         @[speedLabel, speedControls],
@@ -1037,6 +1105,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
         @[runModeLabel, _limitPopup],
         @[limitLabel, limitControls],
         @[jitterLabel, jitterControls],
+        @[startDelayLabel, startDelayControls],
     ]];
     grid.translatesAutoresizingMaskIntoConstraints = NO;
     grid.rowSpacing = 12;
@@ -1044,7 +1113,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     grid.xPlacement = NSGridCellPlacementLeading;
     grid.yPlacement = NSGridCellPlacementCenter;
 
-    NSTextField *speedHint = Label(@"1–5,000 CPS. Changes apply immediately while clicking. Limits stop cleanly at the next safe boundary.");
+    NSTextField *speedHint = Label(@"1–5,000 CPS. Changes apply immediately. Start delay gives you time to move to the target; limits stop cleanly.");
     speedHint.font = [NSFont systemFontOfSize:11];
     speedHint.textColor = NSColor.secondaryLabelColor;
 
@@ -1058,9 +1127,10 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     permissionRow.distribution = NSStackViewDistributionFillProportionally;
     permissionRow.spacing = 10;
 
+    NSButton *resetButton = [NSButton buttonWithTitle:@"Reset Defaults" target:self action:@selector(resetPreferences:)];
     NSButton *doneButton = [NSButton buttonWithTitle:@"Done" target:self action:@selector(closePreferences:)];
     doneButton.keyEquivalent = @"\r";
-    NSStackView *buttonRow = [NSStackView stackViewWithViews:@[[NSView new], doneButton]];
+    NSStackView *buttonRow = [NSStackView stackViewWithViews:@[resetButton, [NSView new], doneButton]];
     buttonRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
     buttonRow.distribution = NSStackViewDistributionFill;
 
@@ -1164,9 +1234,48 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     [self applyJitter:sender.doubleValue];
 }
 
+- (void)startDelayStepperChanged:(NSStepper *)sender {
+    [self applyStartDelay:sender.doubleValue];
+}
+
 - (void)controlTextDidEndEditing:(NSNotification *)notification {
     if (notification.object == _speedField) [self applySpeed:_speedField.doubleValue];
     if (notification.object == _limitField) [self limitFieldChanged:_limitField];
+}
+
+- (void)resetPreferences:(id)sender {
+    (void)sender;
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"Reset SymClick preferences?";
+    alert.informativeText = @"This restores the default shortcut and all click settings.";
+    [alert addButtonWithTitle:@"Reset Defaults"];
+    [alert addButtonWithTitle:@"Cancel"];
+    if ([alert runModal] != NSAlertFirstButtonReturn) return;
+
+    [self applySpeed:kDefaultCPS];
+    [self applyMouseButton:0];
+    [self applyLocationMode:0];
+    [self applyLimitMode:0];
+    [self applyClickLimit:1'000];
+    [self applyDuration:60.0];
+    [self applyClickPattern:0];
+    [self applyJitter:0.0];
+    [self applyStartDelay:kDefaultStartDelaySeconds];
+    _fixedLocation = CGPointZero;
+    _hasFixedLocation = false;
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    [defaults setDouble:0.0 forKey:kFixedXPreference];
+    [defaults setDouble:0.0 forKey:kFixedYPreference];
+    [defaults setBool:NO forKey:kFixedLocationCapturedPreference];
+
+    if ([self registerHotKeyCode:kDefaultKeyCode modifiers:kDefaultModifiers]) {
+        _hotKeyCode = kDefaultKeyCode;
+        _hotKeyModifiers = kDefaultModifiers;
+        [defaults setInteger:_hotKeyCode forKey:kHotKeyCodePreference];
+        [defaults setInteger:_hotKeyModifiers forKey:kHotKeyModifiersPreference];
+    }
+    [self refreshPreferencesControls];
+    [self updateUI];
 }
 
 - (void)closePreferences:(id)sender {
@@ -1208,17 +1317,48 @@ int RunSelfTests() {
             NormalizeClickLimit(24.6) != 25) return 2;
         if (NormalizeDuration(0) != 1 || NormalizeDuration(100'000) != 86'400 || NormalizeDuration(24.6) != 25) return 3;
         if (NormalizeJitter(-1) != 0 || NormalizeJitter(100) != 20 || NormalizeJitter(4.6) != 5) return 4;
-        if (![ShortcutDisplay(kVK_ANSI_C, controlKey | optionKey) isEqualToString:@"⌃⌥C"]) return 5;
-        if (![ShortcutDisplay(kVK_F6, 0) isEqualToString:@"F6"]) return 6;
+        if (NormalizeStartDelay(-1) != 0 || NormalizeStartDelay(100) != 10 || NormalizeStartDelay(2.6) != 3) return 5;
+        if (![ShortcutDisplay(kVK_ANSI_C, controlKey | optionKey) isEqualToString:@"⌃⌥C"]) return 6;
+        if (![ShortcutDisplay(kVK_F6, 0) isEqualToString:@"F6"]) return 7;
         if (CarbonModifiersFromEvent(NSEventModifierFlagCommand | NSEventModifierFlagShift) !=
-            (cmdKey | shiftKey)) return 7;
+            (cmdKey | shiftKey)) return 8;
         NSLog(@"SymClick self-test passed");
+    }
+    return 0;
+}
+
+int RunDiagnostics() {
+    @autoreleasepool {
+        struct utsname systemInfo{};
+        uname(&systemInfo);
+        NSString *version = [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
+        if (![version isKindOfClass:NSString.class]) version = @"development";
+        std::printf("SymClick diagnostics\nversion=%s\nmachine=%s\naccessibility=%s\n",
+                    version.UTF8String,
+                    systemInfo.machine,
+                    CGPreflightPostEventAccess() ? "granted" : "not-granted");
+    }
+    return 0;
+}
+
+int RunSmokeTest() {
+    @autoreleasepool {
+        NSApplication *application = NSApplication.sharedApplication;
+        [application setActivationPolicy:NSApplicationActivationPolicyAccessory];
+        AppDelegate *delegate = [AppDelegate new];
+        application.delegate = delegate;
+        [application finishLaunching];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{ [application terminate:nil]; });
+        [application run];
     }
     return 0;
 }
 
 int main(int argc, const char *argv[]) {
     if (argc > 1 && std::string(argv[1]) == "--self-test") return RunSelfTests();
+    if (argc > 1 && std::string(argv[1]) == "--diagnose") return RunDiagnostics();
+    if (argc > 1 && std::string(argv[1]) == "--smoke-test") return RunSmokeTest();
     @autoreleasepool {
         NSApplication *application = NSApplication.sharedApplication;
         AppDelegate *delegate = [AppDelegate new];

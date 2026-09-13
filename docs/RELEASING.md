@@ -8,6 +8,8 @@ This checklist is for project maintainers.
 
    ```sh
    make clean verify
+   make diagnostics
+   make smoke
    ```
 
 4. Build the release with a Developer ID identity:

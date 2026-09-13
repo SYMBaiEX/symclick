@@ -1,4 +1,4 @@
-# SymClick v1.1 product plan
+# SymClick product plan (v1.2)
 
 ## North star
 
@@ -16,7 +16,7 @@ cloud account, a heavy UI, or an unbounded mode that can strand a user in a game
 - Universal arm64/x86_64 build, MIT license, contributor/security docs, CI, and
   signed release packaging.
 
-## v1.1 shipped
+## v1.1 shipped and complete
 
 - Single or double click patterns, including correct click-state metadata.
 - Pointer-following or fixed-location runs, with one-click pointer capture.
@@ -28,16 +28,26 @@ cloud account, a heavy UI, or an unbounded mode that can strand a user in a game
 - Settings persistence, input normalization, self-tests, clean universal builds,
   and release documentation.
 
+## v1.2 shipped
+
+- Optional 0–10 second start delay: the app visibly arms, then begins clicking; the
+  same shortcut cancels the countdown.
+- Reset Defaults restores the shortcut and every click setting after confirmation.
+- `--diagnose` reports the bundle version, host architecture, and Accessibility state.
+- `--smoke-test` boots the real AppKit delegate/menu-bar lifecycle and exits cleanly;
+  `make diagnostics` and `make smoke` make these release gates repeatable.
+
 ## User flow
 
 1. Launch SymClick; it appears in the menu bar and registers `⌃⌥C`.
-2. Open Preferences once to choose speed, button, pattern, location, and an optional
-   run limit. Record a shortcut if the default conflicts with another app.
-3. If using a fixed target, place the pointer on it and press **Capture pointer**.
-4. Start from the menu or shortcut. The status item shows clicking, CPS, count, and
+2. Open Preferences once to choose speed, button, pattern, location, optional run
+   limit, and an optional start delay. Record a shortcut if the default conflicts.
+4. If using a start delay, press the shortcut and move to the target while the status
+   item says **Starting**; press it again to cancel.
+5. Start from the menu or shortcut. The status item shows clicking, CPS, count, and
    the active limit.
-5. Stop with the same shortcut/menu item. A count or duration limit stops cleanly.
-6. Change settings and start another run; the count resets and the new settings apply.
+6. Stop with the same shortcut/menu item. A count or duration limit stops cleanly.
+7. Change settings and start another run; the count resets and the new settings apply.
 
 ## Easy wins included in this release
 
@@ -46,6 +56,8 @@ cloud account, a heavy UI, or an unbounded mode that can strand a user in a game
 - Fixed targets and capture remove the need to keep the pointer still.
 - Double-click and bounded jitter cover more game UI patterns without external code.
 - A single Preferences surface and menu shortcuts reduce setup friction.
+- Start delay and Reset Defaults make recovery and target selection safer.
+- Diagnostics and a real lifecycle smoke test turn “it launched” into a repeatable gate.
 - No telemetry, network calls, npm wrapper, background service, or anti-cheat bypass.
 
 ## Removed or deliberately not added
@@ -68,9 +80,20 @@ cloud account, a heavy UI, or an unbounded mode that can strand a user in a game
 - HID/driver-level injection or anti-cheat evasion is out of scope. SymClick uses the
   documented Core Graphics event path and clearly warns that games may prohibit it.
 
+## Why SymClick is better
+
+Competing autoclickers often trade safety for a giant speed number or hide state in a
+window that disappears behind the game. SymClick keeps the controls in the menu bar,
+shows whether it is idle, arming, or clicking, makes every limit visible, and keeps a
+global stop shortcut easy to reach. The engine is native and dependency-free, while
+the release is signed, notarized, stapled, and checksum-verifiable. Those are user
+value; accounts, telemetry, stealth injection, and elaborate scripting are not.
+
 ## Release gates
 
-Every release must pass `make clean verify`, confirm both architectures, validate the
-bundle signature, test the archive and checksum, pass CI, and have a GitHub release
-whose asset hash matches the locally verified archive. Social announcements publish
-only after those gates and must link to the exact release asset.
+Every release must pass `make clean verify`, `make diagnostics`, and `make smoke`,
+confirm both architectures, validate the bundle signature, test the archive and
+checksum, pass CI, and have a GitHub release whose asset hash matches the locally
+verified archive. For distribution builds, Apple must return `Accepted`, stapler
+validation must pass, and `spctl` must report `source=Notarized Developer ID`.
+Social announcements publish only after those gates and must link to the exact release.

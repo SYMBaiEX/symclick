@@ -7,8 +7,8 @@
 SymClick is a tiny native macOS menu-bar autoclicker. It uses AppKit for the menu,
 Carbon for a global start/stop hotkey, and a dedicated Objective-C++/Core Graphics
 click engine. There are no third-party dependencies, telemetry, network requests,
-or background services. The v1.1 engine adds bounded runs, fixed targets, double
-clicks, optional jitter, and live click counts without making the app harder to stop.
+or background services. The v1.2 engine adds a safety start delay, resettable
+preferences, diagnostics, and a launch smoke path without making the app harder to stop.
 
 ## Features
 
@@ -20,7 +20,9 @@ clicks, optional jitter, and live click counts without making the app harder to 
 - Follow the pointer or capture a fixed screen location
 - Repeat until stopped, stop after a click count (1–10,000,000), or stop after a duration (1 second–24 hours)
 - Optional bounded pointer jitter (0–20 pixels)
+- Optional 0–10 second start delay so you can move to the target safely
 - Live click count and run-limit status in the menu bar
+- Reset Defaults action and a diagnostics/smoke-test path for maintainers
 - Changes to settings apply while the clicker is running
 - Native menu-bar status with no Dock icon
 - Universal Apple Silicon and Intel build
@@ -30,7 +32,7 @@ clicks, optional jitter, and live click counts without making the app harder to 
 Download the universal macOS archive from [GitHub Releases](https://github.com/SYMBaiEX/symclick/releases/latest),
 extract it, and move `SymClick.app` to `/Applications`.
 
-The v1.1.0 binary is Developer ID–signed with hardened runtime, notarized, and
+The v1.2.0 binary is Developer ID–signed with hardened runtime, notarized, and
 stapled. Release checksums are published beside each archive.
 
 ### Build from source
@@ -64,7 +66,7 @@ Accessibility**.
 
 ## Usage
 
-1. Open **Preferences…** and choose a shortcut, speed, button, pattern, location, and optional run limit.
+1. Open **Preferences…** and choose a shortcut, speed, button, pattern, location, optional run limit, and start delay.
 2. For a fixed target, put the pointer over it and choose **Capture pointer**.
 3. Press `⌃⌥C` (or choose **Start Clicking**) to begin.
 4. Press the same shortcut again to stop, or let the configured click-count/duration limit stop the run.
@@ -81,6 +83,8 @@ it is allowed.
 
 ```sh
 make test
+make diagnostics
+make smoke
 make verify
 make package
 make clean

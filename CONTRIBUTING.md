@@ -25,6 +25,10 @@ Use `make run` for a local build. macOS Accessibility permission is required to
 manually test click injection. Never run automated click-injection tests against an
 uncontrolled desktop session.
 
+`make diagnostics` reports the current bundle version, host architecture, and
+Accessibility state. `make smoke` boots the real AppKit/menu-bar lifecycle and exits
+automatically; it is safe to run without generating clicks.
+
 ## Pull requests
 
 - Keep each pull request focused and explain the user-visible behavior.

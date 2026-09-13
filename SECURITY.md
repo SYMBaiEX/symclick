@@ -21,3 +21,7 @@ install a privileged helper. Its preferences are stored through `NSUserDefaults`
 
 Only download releases from the official GitHub repository. Each binary archive is
 accompanied by a SHA-256 checksum.
+
+The release process also requires Apple notarization and stapling. A valid release
+must pass `xcrun stapler validate` and report `source=Notarized Developer ID` from
+`spctl`; a Developer ID signature alone is not treated as sufficient.

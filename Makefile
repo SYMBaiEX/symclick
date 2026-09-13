@@ -19,7 +19,7 @@ ifneq ($(SIGN_IDENTITY),-)
 CODESIGN_FLAGS += --timestamp --options runtime
 endif
 
-.PHONY: all run test verify package install clean
+.PHONY: all run test diagnostics smoke verify package install clean
 
 all: $(BINARY)
 
@@ -34,6 +34,12 @@ run: all
 
 test: all
 	$(BINARY) --self-test
+
+diagnostics: all
+	$(BINARY) --diagnose
+
+smoke: all
+	$(BINARY) --smoke-test
 
 verify: test
 	plutil -lint $(PLIST)
