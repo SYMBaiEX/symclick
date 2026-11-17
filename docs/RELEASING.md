@@ -25,9 +25,12 @@ This checklist is for project maintainers.
    ```sh
    codesign -dvvv build/SymClick.app
    codesign --verify --deep --strict build/SymClick.app
-   unzip -t build/dist/SymClick-v*-macOS-universal.zip
-   shasum -a 256 -c build/dist/SymClick-v*-macOS-universal.zip.sha256
+   make verify-release
    ```
+
+   The verifier inspects the archived app, compares its version, build, and bundle
+   identifier with `Info.plist`, checks both architecture slices and the signature,
+   and verifies archive integrity and its checksum. It does not verify notarization.
 
 6. Submit the archive and wait for Apple’s decision:
 
@@ -39,7 +42,7 @@ This checklist is for project maintainers.
    spctl -a -vv build/SymClick.app
    ```
 
-   Recreate the archive and checksum after stapling. Never describe a release as
+   Recreate the archive and checksum after stapling, then run `make verify-release` again. Never describe a release as
    notarized without an `Accepted` submission, successful stapler validation, and
    `source=Notarized Developer ID` from `spctl`.
 7. Commit the release metadata, create the matching tag, push, and publish a

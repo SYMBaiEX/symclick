@@ -19,7 +19,7 @@ ifneq ($(SIGN_IDENTITY),-)
 CODESIGN_FLAGS += --timestamp --options runtime
 endif
 
-.PHONY: all run test diagnostics smoke agent-check verify package install clean
+.PHONY: all run test diagnostics smoke agent-check verify package verify-release install clean
 
 all: $(BINARY)
 
@@ -59,6 +59,9 @@ package: all
 	ditto -c -k --sequesterRsrc --keepParent $(APP_BUNDLE) $(ARCHIVE)
 	cd $(DIST_DIR) && shasum -a 256 $(notdir $(ARCHIVE)) > $(notdir $(ARCHIVE)).sha256
 	unzip -tq $(ARCHIVE)
+
+verify-release:
+	./scripts/verify-release.sh $(ARCHIVE)
 
 install: all
 	rm -rf /Applications/$(APP_NAME).app
