@@ -243,6 +243,7 @@ bool ParseAgentOptions(int argc, const char *argv[], AgentOptions *options,
     options->cps = NormalizeCPS(options->cps);
     options->jitter = NormalizeJitter(options->jitter);
     options->startDelay = NormalizeStartDelay(options->startDelay);
+    if (options->hasDuration) options->duration = NormalizeDuration(options->duration);
     return true;
 }
 
@@ -1710,6 +1711,12 @@ int RunSelfTests() {
         }
         if (ShouldShowClickEffect(false, 1, 0) || ShouldShowClickEffect(true, 0, 0) ||
             ShouldShowClickEffect(true, 10, 10) || !ShouldShowClickEffect(true, 10, 1)) return 15;
+        {
+            const char *arguments[] = {"SymClick", "--agent-validate", "--x", "0", "--y", "0", "--duration", "2.5"};
+            AgentOptions options;
+            std::string error;
+            if (!ParseAgentOptions(static_cast<int>(std::size(arguments)), arguments, &options, false, &error) || options.duration != 3) return 16;
+        }
         NSLog(@"SymClick self-test passed");
     }
     return 0;
@@ -1831,8 +1838,7 @@ int RunAgentHelp() {
         "  \"commands\": {\n"
         "    \"status\": \"SymClick --agent-status\",\n"
         "    \"inspect\": \"SymClick --agent-inspect (read-only)\",\n"
-        "    \"validate\": \"SymClick --agent-validate --x <px> --y <px> --clicks <n> --cps <n>\",\n"
-        "    \"run\": \"SymClick --agent-run --confirm --x <px> --y <px> --clicks <n> --cps <n>\"\n"
+        "    \"validate\": \"SymClick --agent-validate --x <px> --y <px> --clicks <n> --cps <n>\"\n"
         "  },\n"
         "  \"safety\": {\n"
         "    \"requires_confirmation\": true,\n"
@@ -1843,7 +1849,7 @@ int RunAgentHelp() {
         "    \"max_clicks\": 10000000,\n"
         "    \"max_duration_seconds\": 86400\n"
         "  },\n"
-        "  \"events\": [\"ready\", \"started\", \"completed\", \"error\"]\n"
+        "  \"events\": [\"status\", \"validated\", \"error\"]\n"
         "}\n",
         AgentBundleVersion());
     return 0;
@@ -1855,7 +1861,7 @@ int RunAgentStatus() {
         uname(&systemInfo);
         std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"status\","
                     "\"version\":\"%s\",\"machine\":\"%s\",\"accessibility\":\"%s\","
-                    "\"local_only\":true,\"capabilities\":[\"inspect\",\"validate\",\"run\"]}\n",
+                    "\"local_only\":true,\"capabilities\":[\"inspect\",\"validate\"]}\n",
                     AgentBundleVersion(), systemInfo.machine,
                     CGPreflightPostEventAccess() ? "granted" : "not-granted");
     }
@@ -1923,40 +1929,9 @@ int RunAgentCommand(int argc, const char *argv[], bool execute) {
             PrintAgentConfig(options, "validated");
             return 0;
         }
-        if (!CGPreflightPostEventAccess()) {
-            std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"error\","
-                        "\"code\":\"accessibility_required\",\"message\":\"Enable SymClick in Privacy & Security > Accessibility\"}\n");
-            return 3;
-        }
-
-        ClickEngine engine;
-        engine.setClicksPerSecond(options.cps);
-        engine.setMouseButton(options.button);
-        engine.setLocationMode(1);
-        engine.setFixedLocation(CGPointMake(options.x, options.y));
-        engine.setClickPattern(options.pattern);
-        engine.setJitterPixels(options.jitter);
-        engine.setStartDelaySeconds(options.startDelay);
-        if (options.hasClicks) {
-            engine.setLimitMode(1);
-            engine.setClickLimit(options.clicks);
-        } else {
-            engine.setLimitMode(2);
-            engine.setDurationSeconds(options.duration);
-        }
-
-        PrintAgentConfig(options, "ready");
-        engine.start();
-        std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"started\"}\n");
-        std::fflush(stdout);
-        while (engine.isRunning()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-        engine.stop();
-        const char *reason = options.hasClicks ? "click-limit" : "duration-limit";
-        std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"completed\","
-                    "\"clicks\":%llu,\"reason\":\"%s\"}\n",
-                    static_cast<unsigned long long>(engine.clickCount()), reason);
+        std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"error\","
+                    "\"code\":\"run_unavailable\",\"message\":\"Agent execution is disabled until shared stop controls are available\"}\n");
+        return 4;
     }
     return 0;
 }

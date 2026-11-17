@@ -23,7 +23,7 @@ without making the app harder to stop or exposing a network control surface.
 - Optional 0–10 second start delay so you can move to the target safely
 - Live click count and run-limit status in the menu bar
 - Reset Defaults action and a diagnostics/smoke-test path for maintainers
-- Local `--agent-status`, `--agent-validate`, and explicitly confirmed `--agent-run` commands
+- Local `--agent-status` and `--agent-validate` commands; agent execution is disabled pending shared stop controls
 - Changes to settings apply while the clicker is running
 - Native menu-bar status with no Dock icon
 - Universal Apple Silicon and Intel build

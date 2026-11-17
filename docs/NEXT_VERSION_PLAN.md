@@ -49,8 +49,8 @@ plane.
   capabilities without generating input.
 - `--agent-inspect` reports a read-only pointer and display snapshot for target confirmation.
 - `--agent-validate` normalizes a fixed-target plan without posting any events.
-- `--agent-run` executes only an explicitly confirmed finite click-count or duration
-  run and emits `ready`, `started`, and `completed` JSONL events.
+- `--agent-run` fails closed until agent execution can share visible status and
+  the menu-bar emergency stop.
 - Repository guidance now gives human contributors and coding agents one shared
   safety contract, including how to test without clicking an uncontrolled desktop.
 
@@ -67,8 +67,8 @@ plane.
 6. Change settings and start another run; the count resets and the new settings apply.
 
 For an AI-agent flow, use `--agent-status`, ask the user to confirm coordinates,
-run `--agent-validate`, show the normalized plan, require explicit confirmation,
-then stream the JSONL events from `--agent-run`.
+run `--agent-validate`, show the normalized plan, then have the user start and
+stop the run from the menu-bar app. Agent execution remains disabled.
 
 ## Easy wins included in this release
 

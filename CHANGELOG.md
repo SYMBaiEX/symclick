@@ -11,16 +11,16 @@ All notable changes to SymClick are documented here. This project follows
 - Versioned JSON Schema for agent events and normalized plans.
 - Opt-in read-only agent pointer and display coordinate inspector, including scale.
 - Optional, off-by-default CLICK! visual indicator for menu-bar runs.
-- Local `symclick-agent/v1` JSONL contract for status, dry-run validation, and
-  explicitly confirmed finite runs.
-- Agent runs require a fixed target, a click-count or duration bound, and a
-  preflight Accessibility check; no network listener or background service is added.
+- Local `symclick-agent/v1` JSONL contract for status and dry-run validation.
+  Agent execution is disabled pending shared visible stop controls.
 - Repository-level `AGENTS.md`, agent integration documentation, and an agent issue form.
 
 ### Improved
 
 - Shortcut registration failures now offer a retry, preserve a working shortcut, and report unavailable defaults.
 - Preferences now feature an original comic-inspired illustrated banner while retaining native controls.
+- Agent execution fails closed until it can use the visible menu-bar emergency
+  stop; dry-run validation now reports normalized duration accurately.
 - `make verify` now checks both universal architectures with the current `lipo`
   command syntax and exercises the agent contract.
 - Headless smoke checks report an explicit skip when no interactive display session
