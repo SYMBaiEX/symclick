@@ -74,6 +74,12 @@ Accessibility**.
 3. Press `⌃⌥C` (or choose **Start Clicking**) to begin.
 4. Press the same shortcut again to stop, or let the configured click-count/duration limit stop the run.
 
+An optional **Show CLICK! effect** checkbox in Preferences displays a brief,
+non-interactive badge near the target during menu-bar runs. It is off by default
+and saved locally. Updates are coalesced at most ten times per second, so the
+badge is an indicator rather than a display of every click. It is static,
+including when Reduce Motion is enabled, and does not appear for agent runs.
+
 The menu exposes the common speed, pattern, location, and run-mode controls so you
 can make quick changes without opening Preferences. A new run resets the live count.
 
