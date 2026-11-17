@@ -59,7 +59,7 @@ def main(binary):
     require(all(isinstance(status.get(key), str) for key in ("version", "machine", "accessibility")),
             "status fixture missing string fields")
     require(status["accessibility"] in ("granted", "not-granted") and
-            status["capabilities"] == ["inspect", "validate", "run"], "status fixture has invalid values")
+            status["capabilities"] == ["inspect", "validate"], "status fixture has invalid values")
 
     for name in ("validate-clicks", "validate-duration"):
         events = load_fixture(name)

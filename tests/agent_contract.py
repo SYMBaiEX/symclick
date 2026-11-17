@@ -36,7 +36,12 @@ class AgentContractTests(unittest.TestCase):
         self.assertTrue(payload["safety"]["requires_confirmation"])
         self.assertTrue(payload["safety"]["requires_fixed_target"])
         self.assertTrue(payload["safety"]["requires_finite_bound"])
-        self.assertEqual(payload["events"], ["ready", "started", "completed", "error"])
+        self.assertEqual(payload["events"], ["status", "inspection", "validated", "error"])
+
+    def test_real_agent_run_fails_closed(self):
+        payload = self.invoke("--agent-run", "--confirm", "--x", "0", "--y", "0",
+                              "--clicks", "1", exit_code=4)
+        self.assertEqual(payload["code"], "run_unavailable")
 
     def test_status_reports_permission_without_prompting(self):
         payload = self.invoke("--agent-status")

@@ -1849,7 +1849,7 @@ int RunAgentHelp() {
         "    \"max_clicks\": 10000000,\n"
         "    \"max_duration_seconds\": 86400\n"
         "  },\n"
-        "  \"events\": [\"status\", \"validated\", \"error\"]\n"
+        "  \"events\": [\"status\", \"inspection\", \"validated\", \"error\"]\n"
         "}\n",
         AgentBundleVersion());
     return 0;
