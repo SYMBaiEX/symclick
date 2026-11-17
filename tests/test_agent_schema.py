@@ -39,7 +39,13 @@ for name in ("ready",):
 for event in (
     {"protocol":"symclick-agent/v1", "event":"started"},
     {"protocol":"symclick-agent/v1", "event":"completed", "clicks":0, "reason":"duration-limit"},
+    {"protocol":"symclick-agent/v1", "event":"cancelled", "clicks":3, "reason":"interrupt"},
+    {"protocol":"symclick-agent/v1", "event":"inspection", "read_only":True,
+     "coordinate_space":"core_graphics_global_points", "pointer":{"x":-5,"y":10},
+     "displays":[{"id":1,"bounds":{"x":-100,"y":0,"width":100,"height":100},"scale":None}]},
     {"protocol":"symclick-agent/v1", "event":"error", "code":"accessibility_required", "message":"Permission required"},
+    *({"protocol":"symclick-agent/v1", "event":"error", "code":code, "message":"Unavailable"}
+      for code in ("signal_setup_failed", "event_source_failed", "display_unavailable", "pointer_unavailable")),
 ):
     validator.validate(event)
 for change in ({"protocol":"symclick-agent/v2"}, {"event":"unknown"}, {"bound":{"type":"clicks", "value":0}}, {"bound":{"type":"duration_seconds", "value":86401}}):
