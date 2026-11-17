@@ -17,6 +17,7 @@
 #include <mach/mach_time.h>
 #include <limits>
 #include <pthread.h>
+#include <QuartzCore/QuartzCore.h>
 #include <random>
 #include <string>
 #include <thread>
@@ -52,6 +53,11 @@ NSString *const kDurationSecondsPreference = @"durationSeconds";
 NSString *const kClickPatternPreference = @"clickPattern";
 NSString *const kJitterPixelsPreference = @"jitterPixels";
 NSString *const kStartDelayPreference = @"startDelaySeconds";
+NSString *const kClickEffectPreference = @"clickEffectEnabled";
+
+bool ShouldShowClickEffect(bool enabled, uint64_t count, uint64_t previousCount) {
+    return enabled && count > 0 && count != previousCount;
+}
 
 double NormalizeCPS(double value) {
     if (!std::isfinite(value)) {
@@ -237,6 +243,7 @@ bool ParseAgentOptions(int argc, const char *argv[], AgentOptions *options,
     options->cps = NormalizeCPS(options->cps);
     options->jitter = NormalizeJitter(options->jitter);
     options->startDelay = NormalizeStartDelay(options->startDelay);
+    if (options->hasDuration) options->duration = NormalizeDuration(options->duration);
     return true;
 }
 
@@ -572,6 +579,70 @@ CGPoint CurrentPointerLocation() {
 
 @class AppDelegate;
 
+// Register first so a failed replacement never releases the working shortcut.
+template <typename Register, typename Unregister>
+bool ReplaceHotKey(EventHotKeyRef &current, Register registerNew, Unregister unregisterOld) {
+    EventHotKeyRef replacement = nullptr;
+    if (registerNew(&replacement) != noErr || !replacement) return false;
+    if (current) unregisterOld(current);
+    current = replacement;
+    return true;
+}
+
+// Decorative artwork is drawn locally and does not participate in interaction.
+@interface SymClickBanner : NSView
+@end
+
+@implementation SymClickBanner
+- (BOOL)isAccessibilityElement { return NO; }
+- (void)drawRect:(NSRect)dirtyRect {
+    (void)dirtyRect;
+    NSRect bounds = self.bounds;
+    NSColor *ink = [NSColor colorWithCalibratedRed:0.12 green:0.08 blue:0.22 alpha:1];
+    NSColor *pink = [NSColor colorWithCalibratedRed:1.0 green:0.38 blue:0.66 alpha:1];
+    NSColor *cream = [NSColor colorWithCalibratedRed:1.0 green:0.94 blue:0.84 alpha:1];
+    [[NSColor colorWithCalibratedRed:0.85 green:0.77 blue:1.0 alpha:1] setFill];
+    [[NSBezierPath bezierPathWithRoundedRect:bounds xRadius:12 yRadius:12] fill];
+    // Offset dots and a hand-inked star give the panel a printed-comic texture.
+    [[pink colorWithAlphaComponent:0.45] setFill];
+    for (int x = 12; x < (int)bounds.size.width; x += 18)
+        for (int y = 10; y < (int)bounds.size.height; y += 18)
+            [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(x, y, 3, 3)] fill];
+    NSBezierPath *star = [NSBezierPath bezierPath];
+    [star moveToPoint:NSMakePoint(205, 20)];
+    [star lineToPoint:NSMakePoint(216, 39)]; [star lineToPoint:NSMakePoint(236, 44)];
+    [star lineToPoint:NSMakePoint(219, 54)]; [star lineToPoint:NSMakePoint(215, 76)];
+    [star lineToPoint:NSMakePoint(204, 58)]; [star lineToPoint:NSMakePoint(183, 54)];
+    [star lineToPoint:NSMakePoint(199, 42)]; [star closePath];
+    [cream setFill]; [star fill]; [ink setStroke]; star.lineWidth = 2; [star stroke];
+    // Original grown-up anime mascot: hair, face, eyes, fringe and bow.
+    NSBezierPath *hair = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(24, 4, 132, 118)];
+    [ink setFill]; [hair fill];
+    NSBezierPath *face = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(49, 20, 83, 87)];
+    [cream setFill]; [face fill]; [ink setStroke]; face.lineWidth = 3; [face stroke];
+    [ink setFill];
+    [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(66, 52, 9, 16)] fill];
+    [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(105, 52, 9, 16)] fill];
+    NSBezierPath *fringe = [NSBezierPath bezierPath];
+    [fringe moveToPoint:NSMakePoint(47, 75)]; [fringe curveToPoint:NSMakePoint(133, 79) controlPoint1:NSMakePoint(44, 131) controlPoint2:NSMakePoint(132, 132)];
+    [fringe lineToPoint:NSMakePoint(113, 95)]; [fringe lineToPoint:NSMakePoint(91, 76)];
+    [fringe lineToPoint:NSMakePoint(87, 96)]; [fringe lineToPoint:NSMakePoint(68, 77)]; [fringe closePath]; [fringe fill];
+    NSBezierPath *smile = [NSBezierPath bezierPath];
+    [smile moveToPoint:NSMakePoint(82, 39)]; [smile curveToPoint:NSMakePoint(101, 39) controlPoint1:NSMakePoint(86, 32) controlPoint2:NSMakePoint(97, 32)];
+    smile.lineWidth = 2; [ink setStroke]; [smile stroke];
+    NSBezierPath *bow = [NSBezierPath bezierPath];
+    [bow moveToPoint:NSMakePoint(128, 98)]; [bow lineToPoint:NSMakePoint(145, 113)];
+    [bow lineToPoint:NSMakePoint(145, 95)]; [bow lineToPoint:NSMakePoint(159, 89)];
+    [bow lineToPoint:NSMakePoint(145, 82)]; [bow lineToPoint:NSMakePoint(137, 89)]; [bow closePath];
+    [pink setFill]; [bow fill]; bow.lineWidth = 2; [ink setStroke]; [bow stroke];
+    NSDictionary *titleStyle = @{NSFontAttributeName:[NSFont boldSystemFontOfSize:29], NSForegroundColorAttributeName:ink};
+    NSDictionary *subStyle = @{NSFontAttributeName:[NSFont boldSystemFontOfSize:11], NSForegroundColorAttributeName:ink};
+    [@"SYMCLICK!" drawAtPoint:NSMakePoint(183, 78) withAttributes:titleStyle];
+    [@"YOUR CLICKING SIDEKICK ✦" drawAtPoint:NSMakePoint(240, 48) withAttributes:subStyle];
+    [@"SET IT UP. STAY IN CONTROL." drawAtPoint:NSMakePoint(240, 30) withAttributes:subStyle];
+}
+@end
+
 @interface HotKeyRecorderButton : NSButton
 @property(nonatomic, weak) AppDelegate *recorderDelegate;
 @property(nonatomic) BOOL recording;
@@ -618,6 +689,29 @@ CGPoint CurrentPointerLocation() {
     [self.recorderDelegate recorderDidCaptureKeyCode:event.keyCode modifiers:modifiers];
 }
 
+@end
+
+// A static, short-lived badge: no animation runs between updates, including when
+// macOS Reduce Motion is enabled. The window never accepts pointer events.
+@interface ClickEffectView : NSView
+@end
+@implementation ClickEffectView
+- (void)drawRect:(NSRect)dirtyRect {
+    (void)dirtyRect;
+    NSBezierPath *bubble = [NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds, 3, 3) xRadius:14 yRadius:14];
+    [NSColor.systemYellowColor setFill];
+    [bubble fill];
+    [NSColor.blackColor setStroke];
+    bubble.lineWidth = 3;
+    [bubble stroke];
+    NSDictionary *attributes = @{NSFontAttributeName: [NSFont boldSystemFontOfSize:22],
+                                 NSForegroundColorAttributeName: NSColor.blackColor};
+    NSString *text = @"CLICK!";
+    NSSize size = [text sizeWithAttributes:attributes];
+    [text drawAtPoint:NSMakePoint((self.bounds.size.width - size.width) / 2,
+                                 (self.bounds.size.height - size.height) / 2)
+       withAttributes:attributes];
+}
 @end
 
 @implementation AppDelegate {
@@ -668,6 +762,11 @@ CGPoint CurrentPointerLocation() {
     NSTextField *_fixedLocationLabel;
     NSTextField *_permissionLabel;
     NSTimer *_statusTimer;
+    NSButton *_effectCheckbox;
+    NSWindow *_effectWindow;
+    BOOL _effectEnabled;
+    uint64_t _lastEffectCount;
+    CFTimeInterval _effectExpires;
 }
 
 static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *userData) {
@@ -701,8 +800,10 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
         kClickPatternPreference: @0,
         kJitterPixelsPreference: @0.0,
         kStartDelayPreference: @(kDefaultStartDelaySeconds),
+        kClickEffectPreference: @NO,
     }];
 
+    _effectEnabled = [defaults boolForKey:kClickEffectPreference];
     _cps = NormalizeCPS([defaults doubleForKey:kCPSPreference]);
     _mouseButton = std::clamp((int)[defaults integerForKey:kMouseButtonPreference], 0, 2);
     _hotKeyCode = (UInt32)[defaults integerForKey:kHotKeyCodePreference];
@@ -750,6 +851,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     if (_hotKey) UnregisterEventHotKey(_hotKey);
     if (_hotKeyHandler) RemoveEventHandler(_hotKeyHandler);
     [_statusTimer invalidate];
+    [_effectWindow orderOut:nil];
 }
 
 - (void)buildMenu {
@@ -876,14 +978,11 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
 - (BOOL)registerHotKeyCode:(UInt32)keyCode modifiers:(UInt32)modifiers {
     if (_hotKey && keyCode == _hotKeyCode && modifiers == _hotKeyModifiers) return YES;
 
-    EventHotKeyRef newHotKey = nullptr;
     EventHotKeyID identifier{ kHotKeySignature, kHotKeyID };
-    const OSStatus status = RegisterEventHotKey(keyCode, modifiers, identifier,
-                                                GetApplicationEventTarget(), 0, &newHotKey);
-    if (status != noErr) return NO;
-    if (_hotKey) UnregisterEventHotKey(_hotKey);
-    _hotKey = newHotKey;
-    return YES;
+    return ReplaceHotKey(_hotKey, [&](EventHotKeyRef *replacement) {
+        return RegisterEventHotKey(keyCode, modifiers, identifier,
+                                   GetApplicationEventTarget(), 0, replacement);
+    }, [](EventHotKeyRef previous) { UnregisterEventHotKey(previous); });
 }
 
 - (void)menuWillOpen:(NSMenu *)menu {
@@ -913,6 +1012,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
         }
     }
 
+    _lastEffectCount = 0;
     _engine.start();
     [self updateUI];
 }
@@ -1030,7 +1130,45 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
 
 - (void)pollEngine:(NSTimer *)timer {
     (void)timer;
+    const uint64_t count = _engine.clickCount();
+    if (ShouldShowClickEffect(_effectEnabled, count, _lastEffectCount)) {
+        [self showClickEffect];
+    }
+    _lastEffectCount = count;
+    if (_effectWindow.visible && (!_effectEnabled || CACurrentMediaTime() >= _effectExpires)) {
+        [_effectWindow orderOut:nil];
+    }
     [self updateUI];
+}
+
+- (void)showClickEffect {
+    if (!_effectWindow) {
+        _effectWindow = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 110, 48)
+            styleMask:NSWindowStyleMaskBorderless backing:NSBackingStoreBuffered defer:NO];
+        _effectWindow.opaque = NO;
+        _effectWindow.backgroundColor = NSColor.clearColor;
+        _effectWindow.hasShadow = YES;
+        _effectWindow.ignoresMouseEvents = YES;
+        _effectWindow.level = NSFloatingWindowLevel;
+        _effectWindow.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces |
+            NSWindowCollectionBehaviorFullScreenAuxiliary | NSWindowCollectionBehaviorIgnoresCycle;
+        _effectWindow.contentView = [[ClickEffectView alloc] initWithFrame:NSMakeRect(0, 0, 110, 48)];
+    }
+    NSPoint point = NSEvent.mouseLocation;
+    if (_locationMode == 1 && NSScreen.screens.count) {
+        // Quartz uses a top-left origin on the primary screen; AppKit uses bottom-left.
+        point = NSMakePoint(_fixedLocation.x, NSMaxY(NSScreen.screens.firstObject.frame) - _fixedLocation.y);
+    }
+    [_effectWindow setFrameOrigin:NSMakePoint(point.x + 12, point.y + 12)];
+    [_effectWindow orderFrontRegardless];
+    _effectExpires = CACurrentMediaTime() + 0.2;
+}
+
+- (void)effectChanged:(NSButton *)sender {
+    _effectEnabled = sender.state == NSControlStateValueOn;
+    [NSUserDefaults.standardUserDefaults setBool:_effectEnabled forKey:kClickEffectPreference];
+    _lastEffectCount = _engine.clickCount();
+    if (!_effectEnabled) [_effectWindow orderOut:nil];
 }
 
 - (void)updateUI {
@@ -1041,11 +1179,12 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     NSString *count = [NSString stringWithFormat:@"%llu clicks", static_cast<unsigned long long>(_engine.clickCount())];
     NSString *runMode = _limitMode == 1 ? [NSString stringWithFormat:@" · %llu max", static_cast<unsigned long long>(_clickLimit)] :
         (_limitMode == 2 ? [NSString stringWithFormat:@" · %.0fs max", _durationSeconds] : @"");
-    _statusMenuItem.title = arming ? [NSString stringWithFormat:@"◐ Starting · %.0fs delay · %@", _startDelaySeconds, ShortcutDisplay(_hotKeyCode, _hotKeyModifiers)] :
+    NSString *shortcut = _hotKey ? ShortcutDisplay(_hotKeyCode, _hotKeyModifiers) : @"No shortcut — open Preferences";
+    _statusMenuItem.title = arming ? [NSString stringWithFormat:@"◐ Starting · %.0fs delay · %@", _startDelaySeconds, shortcut] :
         (running ? [NSString stringWithFormat:@"● Clicking · %@ · %@%@", speed, count, runMode] :
                    [NSString stringWithFormat:@"○ Idle · %@ · %@%@", speed, count, runMode]);
     _toggleMenuItem.title = [NSString stringWithFormat:@"%@ Clicking (%@)",
-        arming ? @"Cancel" : (running ? @"Stop" : @"Start"), ShortcutDisplay(_hotKeyCode, _hotKeyModifiers)];
+        arming ? @"Cancel" : (running ? @"Stop" : @"Start"), shortcut];
     _speedMenuItem.title = [NSString stringWithFormat:@"Speed: %@", speed];
 
     for (NSMenuItem *item in _speedMenu.itemArray) {
@@ -1072,7 +1211,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     _statusItem.button.title = image ? @"" : (running ? @"●" : @"TC");
 
     if (_recorderButton && !_recorderButton.recording) {
-        _recorderButton.title = ShortcutDisplay(_hotKeyCode, _hotKeyModifiers);
+        _recorderButton.title = _hotKey ? ShortcutDisplay(_hotKeyCode, _hotKeyModifiers) : @"Unavailable — choose a shortcut";
     }
     if (_permissionLabel) {
         _permissionLabel.stringValue = CGPreflightPostEventAccess() ?
@@ -1083,6 +1222,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
 
 - (void)refreshPreferencesControls {
     if (!_preferencesWindow) return;
+    _effectCheckbox.state = _effectEnabled ? NSControlStateValueOn : NSControlStateValueOff;
     [_patternPopup selectItemAtIndex:_clickPattern];
     [_locationPopup selectItemAtIndex:_locationMode];
     [_limitPopup selectItemAtIndex:_limitMode];
@@ -1128,7 +1268,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     _speedField.doubleValue = _cps;
     _speedStepper.doubleValue = _cps;
     [_mousePopup selectItemAtIndex:_mouseButton];
-    _recorderButton.title = ShortcutDisplay(_hotKeyCode, _hotKeyModifiers);
+    _recorderButton.title = _hotKey ? ShortcutDisplay(_hotKeyCode, _hotKeyModifiers) : @"Unavailable — choose a shortcut";
     [self refreshPreferencesControls];
     [self updateUI];
     [NSApp activateIgnoringOtherApps:YES];
@@ -1137,8 +1277,11 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
 }
 
 - (void)buildPreferencesWindow {
+    NSScreen *screen = NSScreen.mainScreen;
+    CGFloat availableHeight = screen ? NSHeight(screen.visibleFrame) : 760;
+    CGFloat contentHeight = std::max<CGFloat>(240, std::min<CGFloat>(720, availableHeight - 32));
     _preferencesWindow = [[NSWindow alloc]
-        initWithContentRect:NSMakeRect(0, 0, 560, 550)
+        initWithContentRect:NSMakeRect(0, 0, 560, contentHeight)
                   styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
                     backing:NSBackingStoreBuffered
                       defer:NO];
@@ -1146,6 +1289,9 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     _preferencesWindow.releasedWhenClosed = NO;
     _preferencesWindow.delegate = self;
 
+    SymClickBanner *banner = [[SymClickBanner alloc] initWithFrame:NSZeroRect];
+    banner.translatesAutoresizingMaskIntoConstraints = NO;
+    [banner.heightAnchor constraintEqualToConstant:126].active = YES;
     NSTextField *intro = Label(@"Fast, native clicking with predictable limits and target control.");
     intro.font = [NSFont systemFontOfSize:13];
 
@@ -1276,6 +1422,8 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     startDelayControls.orientation = NSUserInterfaceLayoutOrientationHorizontal;
     startDelayControls.spacing = 8;
 
+    _effectCheckbox = [NSButton checkboxWithTitle:@"Show CLICK! effect" target:self action:@selector(effectChanged:)];
+
     NSGridView *grid = [NSGridView gridViewWithViews:@[
         @[shortcutLabel, _recorderButton],
         @[speedLabel, speedControls],
@@ -1315,19 +1463,34 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     buttonRow.distribution = NSStackViewDistributionFill;
 
     NSStackView *root = [NSStackView stackViewWithViews:@[
-        intro, grid, speedHint, permissionRow, buttonRow,
+        banner, intro, grid, _effectCheckbox, speedHint, permissionRow, buttonRow,
     ]];
     root.translatesAutoresizingMaskIntoConstraints = NO;
     root.orientation = NSUserInterfaceLayoutOrientationVertical;
     root.alignment = NSLayoutAttributeLeading;
     root.spacing = 14;
-    [_preferencesWindow.contentView addSubview:root];
+    NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSZeroRect];
+    scroll.translatesAutoresizingMaskIntoConstraints = NO;
+    scroll.hasVerticalScroller = YES;
+    scroll.autohidesScrollers = YES;
+    scroll.drawsBackground = NO;
+    NSView *document = [NSView new];
+    document.translatesAutoresizingMaskIntoConstraints = NO;
+    [document addSubview:root];
+    scroll.documentView = document;
+    [_preferencesWindow.contentView addSubview:scroll];
 
     [NSLayoutConstraint activateConstraints:@[
-        [root.leadingAnchor constraintEqualToAnchor:_preferencesWindow.contentView.leadingAnchor constant:24],
-        [root.trailingAnchor constraintEqualToAnchor:_preferencesWindow.contentView.trailingAnchor constant:-24],
-        [root.topAnchor constraintEqualToAnchor:_preferencesWindow.contentView.topAnchor constant:22],
-        [root.bottomAnchor constraintLessThanOrEqualToAnchor:_preferencesWindow.contentView.bottomAnchor constant:-22],
+        [scroll.leadingAnchor constraintEqualToAnchor:_preferencesWindow.contentView.leadingAnchor],
+        [scroll.trailingAnchor constraintEqualToAnchor:_preferencesWindow.contentView.trailingAnchor],
+        [scroll.topAnchor constraintEqualToAnchor:_preferencesWindow.contentView.topAnchor],
+        [scroll.bottomAnchor constraintEqualToAnchor:_preferencesWindow.contentView.bottomAnchor],
+        [document.widthAnchor constraintEqualToAnchor:scroll.contentView.widthAnchor],
+        [root.leadingAnchor constraintEqualToAnchor:document.leadingAnchor constant:24],
+        [root.trailingAnchor constraintEqualToAnchor:document.trailingAnchor constant:-24],
+        [root.topAnchor constraintEqualToAnchor:document.topAnchor constant:22],
+        [root.bottomAnchor constraintEqualToAnchor:document.bottomAnchor constant:-22],
+        [banner.widthAnchor constraintEqualToAnchor:root.widthAnchor],
         [permissionRow.widthAnchor constraintEqualToAnchor:root.widthAnchor],
         [buttonRow.widthAnchor constraintEqualToAnchor:root.widthAnchor],
     ]];
@@ -1340,7 +1503,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
 }
 
 - (void)recorderDidCaptureKeyCode:(UInt32)keyCode modifiers:(UInt32)modifiers {
-    if (keyCode == _hotKeyCode && modifiers == _hotKeyModifiers) {
+    if (_hotKey && keyCode == _hotKeyCode && modifiers == _hotKeyModifiers) {
         [_recorderButton finishRecording];
         [self updateUI];
         return;
@@ -1348,7 +1511,8 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
 
     if (![self registerHotKeyCode:keyCode modifiers:modifiers]) {
         NSBeep();
-        _recorderButton.title = @"Shortcut unavailable — try another";
+        _recorderButton.title = @"Unavailable — try another or press Escape";
+        _recorderButton.toolTip = @"macOS could not register this shortcut. It may be in use; try another. Your previous shortcut remains active if available.";
         return;
     }
 
@@ -1358,12 +1522,14 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     [defaults setInteger:_hotKeyCode forKey:kHotKeyCodePreference];
     [defaults setInteger:_hotKeyModifiers forKey:kHotKeyModifiersPreference];
     [_recorderButton finishRecording];
+    _recorderButton.toolTip = nil;
     [_preferencesWindow makeFirstResponder:_speedField];
     [self updateUI];
 }
 
 - (void)recorderDidCancel {
     [_recorderButton finishRecording];
+    _recorderButton.toolTip = nil;
     [_preferencesWindow makeFirstResponder:_speedField];
     [self updateUI];
 }
@@ -1441,6 +1607,9 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     [self applyClickPattern:0];
     [self applyJitter:0.0];
     [self applyStartDelay:kDefaultStartDelaySeconds];
+    _effectEnabled = NO;
+    [NSUserDefaults.standardUserDefaults setBool:NO forKey:kClickEffectPreference];
+    [_effectWindow orderOut:nil];
     _fixedLocation = CGPointZero;
     _hasFixedLocation = false;
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
@@ -1453,6 +1622,11 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
         _hotKeyModifiers = kDefaultModifiers;
         [defaults setInteger:_hotKeyCode forKey:kHotKeyCodePreference];
         [defaults setInteger:_hotKeyModifiers forKey:kHotKeyModifiersPreference];
+    } else {
+        NSAlert *failure = [[NSAlert alloc] init];
+        failure.messageText = @"Default shortcut unavailable";
+        failure.informativeText = @"macOS could not register the default shortcut. It may be in use. Your previous shortcut remains active if available; choose another in Preferences.";
+        [failure runModal];
     }
     [self refreshPreferencesControls];
     [self updateUI];
@@ -1524,6 +1698,25 @@ int RunSelfTests() {
             std::string error;
             if (ParseAgentOptions(static_cast<int>(std::size(arguments)), arguments, &options, true, &error)) return 12;
         }
+        {
+            auto oldKey = reinterpret_cast<EventHotKeyRef>(static_cast<uintptr_t>(1));
+            auto newKey = reinterpret_cast<EventHotKeyRef>(static_cast<uintptr_t>(2));
+            EventHotKeyRef current = oldKey;
+            bool removed = false;
+            if (ReplaceHotKey(current, [](EventHotKeyRef *) -> OSStatus { return eventHotKeyExistsErr; },
+                              [&](EventHotKeyRef) { removed = true; }) || current != oldKey || removed) return 13;
+            if (!ReplaceHotKey(current, [&](EventHotKeyRef *out) { *out = newKey; return noErr; },
+                               [&](EventHotKeyRef key) { removed = key == oldKey; }) ||
+                current != newKey || !removed) return 14;
+        }
+        if (ShouldShowClickEffect(false, 1, 0) || ShouldShowClickEffect(true, 0, 0) ||
+            ShouldShowClickEffect(true, 10, 10) || !ShouldShowClickEffect(true, 10, 1)) return 15;
+        {
+            const char *arguments[] = {"SymClick", "--agent-validate", "--x", "0", "--y", "0", "--duration", "2.5"};
+            AgentOptions options;
+            std::string error;
+            if (!ParseAgentOptions(static_cast<int>(std::size(arguments)), arguments, &options, false, &error) || options.duration != 3) return 16;
+        }
         NSLog(@"SymClick self-test passed");
     }
     return 0;
@@ -1539,6 +1732,49 @@ int RunDiagnostics() {
                     version.UTF8String,
                     systemInfo.machine,
                     CGPreflightPostEventAccess() ? "granted" : "not-granted");
+    }
+    return 0;
+}
+
+int RunPerformanceReport() {
+    @autoreleasepool {
+        struct utsname systemInfo{};
+        uname(&systemInfo);
+        NSString *version = [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
+        if (![version isKindOfClass:NSString.class]) version = @"development";
+        NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+        double cps = [defaults objectForKey:kCPSPreference] ? [defaults doubleForKey:kCPSPreference] : kDefaultCPS;
+        int limitMode = std::clamp((int)[defaults integerForKey:kLimitModePreference], 0, 2);
+        double clicks = [defaults objectForKey:kClickLimitPreference] ? [defaults doubleForKey:kClickLimitPreference] : 1000;
+        double duration = [defaults objectForKey:kDurationSecondsPreference] ? [defaults doubleForKey:kDurationSecondsPreference] : 60;
+        NSString *architecture = [NSString stringWithUTF8String:systemInfo.machine];
+        if (!architecture) architecture = @"unknown";
+        NSDictionary *report = @{
+            @"schema": @"symclick-performance/v1",
+            @"version": version,
+            @"architecture": architecture,
+            @"accessibility": CGPreflightPostEventAccess() ? @"granted" : @"not-granted",
+            @"configuration": @{
+                @"cps": @(NormalizeCPS(cps)),
+                @"limit_mode": @[@"unlimited", @"click-count", @"duration"][limitMode],
+                @"click_limit": @(NormalizeClickLimit(clicks)),
+                @"duration_seconds": @(NormalizeDuration(duration)),
+                @"start_delay_seconds": @(NormalizeStartDelay([defaults doubleForKey:kStartDelayPreference])),
+                @"cps_min": @(kMinimumCPS), @"cps_max": @(kMaximumCPS),
+                @"click_limit_max": @(kMaximumClickLimit),
+                @"duration_seconds_max": @(kMaximumDurationSeconds)
+            },
+            @"timing_mode": @"mach-absolute-deadlines",
+            @"observed_throughput": [NSNull null]
+        };
+        NSError *error = nil;
+        NSData *data = [NSJSONSerialization dataWithJSONObject:report options:NSJSONWritingPrettyPrinted | NSJSONWritingSortedKeys error:&error];
+        if (!data) {
+            std::fprintf(stderr, "Could not serialize performance report\n");
+            return 1;
+        }
+        std::fwrite(data.bytes, 1, data.length, stdout);
+        std::printf("\n");
     }
     return 0;
 }
@@ -1601,8 +1837,8 @@ int RunAgentHelp() {
         "  \"version\": \"%s\",\n"
         "  \"commands\": {\n"
         "    \"status\": \"SymClick --agent-status\",\n"
-        "    \"validate\": \"SymClick --agent-validate --x <px> --y <px> --clicks <n> --cps <n>\",\n"
-        "    \"run\": \"SymClick --agent-run --confirm --x <px> --y <px> --clicks <n> --cps <n>\"\n"
+        "    \"inspect\": \"SymClick --agent-inspect (read-only)\",\n"
+        "    \"validate\": \"SymClick --agent-validate --x <px> --y <px> --clicks <n> --cps <n>\"\n"
         "  },\n"
         "  \"safety\": {\n"
         "    \"requires_confirmation\": true,\n"
@@ -1613,7 +1849,7 @@ int RunAgentHelp() {
         "    \"max_clicks\": 10000000,\n"
         "    \"max_duration_seconds\": 86400\n"
         "  },\n"
-        "  \"events\": [\"ready\", \"started\", \"completed\", \"error\"]\n"
+        "  \"events\": [\"status\", \"inspection\", \"validated\", \"error\"]\n"
         "}\n",
         AgentBundleVersion());
     return 0;
@@ -1625,9 +1861,58 @@ int RunAgentStatus() {
         uname(&systemInfo);
         std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"status\","
                     "\"version\":\"%s\",\"machine\":\"%s\",\"accessibility\":\"%s\","
-                    "\"local_only\":true,\"capabilities\":[\"validate\",\"run\"]}\n",
+                    "\"local_only\":true,\"capabilities\":[\"inspect\",\"validate\"]}\n",
                     AgentBundleVersion(), systemInfo.machine,
                     CGPreflightPostEventAccess() ? "granted" : "not-granted");
+    }
+    return 0;
+}
+
+int RunAgentInspect(int argc) {
+    @autoreleasepool {
+        if (argc != 2) {
+            PrintAgentError("--agent-inspect takes no arguments", 2);
+            return 2;
+        }
+        uint32_t count = 0;
+        if (CGGetActiveDisplayList(0, nullptr, &count) != kCGErrorSuccess || count == 0) {
+            std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"error\",\"code\":\"display_unavailable\",\"message\":\"No active display available\"}\n");
+            return 3;
+        }
+        std::vector<CGDirectDisplayID> displays(count);
+        if (CGGetActiveDisplayList(count, displays.data(), &count) != kCGErrorSuccess) {
+            std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"error\",\"code\":\"display_unavailable\",\"message\":\"Could not enumerate active displays\"}\n");
+            return 3;
+        }
+        CGEventRef event = CGEventCreate(nullptr);
+        if (!event) {
+            std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"error\",\"code\":\"pointer_unavailable\",\"message\":\"Could not read pointer location\"}\n");
+            return 3;
+        }
+        CGPoint point = CGEventGetLocation(event);
+        CFRelease(event);
+        NSMutableArray *items = [NSMutableArray array];
+        for (uint32_t i = 0; i < count; ++i) {
+            CGDirectDisplayID display = displays[i];
+            CGRect bounds = CGDisplayBounds(display);
+            id scale = NSNull.null;
+            for (NSScreen *screen in NSScreen.screens) {
+                NSNumber *number = screen.deviceDescription[@"NSScreenNumber"];
+                if (number.unsignedIntValue == display) {
+                    scale = @(screen.backingScaleFactor);
+                    break;
+                }
+            }
+            [items addObject:@{@"id": @(display), @"bounds": @{@"x": @(bounds.origin.x),
+                @"y": @(bounds.origin.y), @"width": @(bounds.size.width), @"height": @(bounds.size.height)},
+                @"scale": scale}];
+        }
+        NSDictionary *snapshot = @{@"protocol": @"symclick-agent/v1", @"event": @"inspection",
+            @"read_only": @YES, @"coordinate_space": @"core_graphics_global_points",
+            @"pointer": @{@"x": @(point.x), @"y": @(point.y)}, @"displays": items};
+        NSData *json = [NSJSONSerialization dataWithJSONObject:snapshot options:0 error:nil];
+        if (!json) return 3;
+        std::printf("%s\n", [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding].UTF8String);
     }
     return 0;
 }
@@ -1644,40 +1929,9 @@ int RunAgentCommand(int argc, const char *argv[], bool execute) {
             PrintAgentConfig(options, "validated");
             return 0;
         }
-        if (!CGPreflightPostEventAccess()) {
-            std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"error\","
-                        "\"code\":\"accessibility_required\",\"message\":\"Enable SymClick in Privacy & Security > Accessibility\"}\n");
-            return 3;
-        }
-
-        ClickEngine engine;
-        engine.setClicksPerSecond(options.cps);
-        engine.setMouseButton(options.button);
-        engine.setLocationMode(1);
-        engine.setFixedLocation(CGPointMake(options.x, options.y));
-        engine.setClickPattern(options.pattern);
-        engine.setJitterPixels(options.jitter);
-        engine.setStartDelaySeconds(options.startDelay);
-        if (options.hasClicks) {
-            engine.setLimitMode(1);
-            engine.setClickLimit(options.clicks);
-        } else {
-            engine.setLimitMode(2);
-            engine.setDurationSeconds(options.duration);
-        }
-
-        PrintAgentConfig(options, "ready");
-        engine.start();
-        std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"started\"}\n");
-        std::fflush(stdout);
-        while (engine.isRunning()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-        engine.stop();
-        const char *reason = options.hasClicks ? "click-limit" : "duration-limit";
-        std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"completed\","
-                    "\"clicks\":%llu,\"reason\":\"%s\"}\n",
-                    static_cast<unsigned long long>(engine.clickCount()), reason);
+        std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"error\","
+                    "\"code\":\"run_unavailable\",\"message\":\"Agent execution is disabled until shared stop controls are available\"}\n");
+        return 4;
     }
     return 0;
 }
@@ -1685,9 +1939,11 @@ int RunAgentCommand(int argc, const char *argv[], bool execute) {
 int main(int argc, const char *argv[]) {
     if (argc > 1 && std::string(argv[1]) == "--self-test") return RunSelfTests();
     if (argc > 1 && std::string(argv[1]) == "--diagnose") return RunDiagnostics();
+    if (argc > 1 && std::string(argv[1]) == "--performance-report") return RunPerformanceReport();
     if (argc > 1 && std::string(argv[1]) == "--smoke-test") return RunSmokeTest();
     if (argc > 1 && std::string(argv[1]) == "--agent-help") return RunAgentHelp();
     if (argc > 1 && std::string(argv[1]) == "--agent-status") return RunAgentStatus();
+    if (argc > 1 && std::string(argv[1]) == "--agent-inspect") return RunAgentInspect(argc);
     if (argc > 1 && std::string(argv[1]) == "--agent-validate") return RunAgentCommand(argc, argv, false);
     if (argc > 1 && std::string(argv[1]) == "--agent-run") return RunAgentCommand(argc, argv, true);
     @autoreleasepool {

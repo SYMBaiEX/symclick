@@ -13,13 +13,13 @@ SIGN_IDENTITY ?= -
 
 CXXFLAGS := -std=c++20 -O3 -flto -fobjc-arc -Wall -Wextra -Wpedantic \
 	-Wno-deprecated-declarations -mmacosx-version-min=12.0 $(ARCHS)
-FRAMEWORKS := -framework AppKit -framework ApplicationServices -framework Carbon
+FRAMEWORKS := -framework AppKit -framework ApplicationServices -framework Carbon -framework QuartzCore
 CODESIGN_FLAGS := --force --sign "$(SIGN_IDENTITY)"
 ifneq ($(SIGN_IDENTITY),-)
 CODESIGN_FLAGS += --timestamp --options runtime
 endif
 
-.PHONY: all run test diagnostics smoke agent-check verify package install clean
+.PHONY: all run test diagnostics smoke agent-check report-check verify package verify-release install clean
 
 all: $(BINARY)
 
@@ -42,14 +42,18 @@ smoke: all
 	$(BINARY) --smoke-test
 
 agent-check: all
-	$(BINARY) --agent-help >/dev/null
-	$(BINARY) --agent-status >/dev/null
-	$(BINARY) --agent-validate --x 0 --y 0 --clicks 1 --cps 25 >/dev/null
+	python3 tests/agent_contract.py $(BINARY)
+	python3 tests/agent_fixtures.py $(BINARY)
 
-verify: test agent-check
+report-check: all
+	python3 tests/performance_report.py $(BINARY)
+
+verify: test agent-check report-check
 	plutil -lint $(PLIST)
-	lipo -verify_arch arm64 $(BINARY)
-	lipo -verify_arch x86_64 $(BINARY)
+	@archs="$$(lipo -archs $(BINARY))"; \
+	  for arch in arm64 x86_64; do \
+	    case " $$archs " in *" $$arch "*) ;; *) echo "Missing architecture: $$arch" >&2; exit 1;; esac; \
+	  done; echo "Architectures: $$archs"
 	codesign --verify --deep --strict --verbose=2 $(APP_BUNDLE)
 
 package: all
@@ -59,6 +63,9 @@ package: all
 	ditto -c -k --sequesterRsrc --keepParent $(APP_BUNDLE) $(ARCHIVE)
 	cd $(DIST_DIR) && shasum -a 256 $(notdir $(ARCHIVE)) > $(notdir $(ARCHIVE)).sha256
 	unzip -tq $(ARCHIVE)
+
+verify-release:
+	./scripts/verify-release.sh $(ARCHIVE)
 
 install: all
 	rm -rf /Applications/$(APP_NAME).app

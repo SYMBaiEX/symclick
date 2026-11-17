@@ -1,0 +1,1 @@
+{"protocol":"symclick-agent/v1","event":"error","code":"invalid_request","message":"--confirm is required for a real click run; use --agent-validate for a dry run"}

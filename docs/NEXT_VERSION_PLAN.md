@@ -35,19 +35,26 @@ plane.
 
 - Optional 0–10 second start delay: the app visibly arms, then begins clicking; the
   same shortcut cancels the countdown.
-- Reset Defaults restores the shortcut and every click setting after confirmation.
+- Reset Defaults restores the shortcut and click settings after confirmation.
 - `--diagnose` reports the bundle version, host architecture, and Accessibility state.
 - `--smoke-test` boots the real AppKit delegate/menu-bar lifecycle and exits cleanly;
   `make diagnostics` and `make smoke` make these release gates repeatable.
 
-## v1.3 next pass
+## v1.3 implementation
 
+- A native comic-inspired Preferences banner and an optional, off-by-default,
+  coalesced `CLICK!` indicator add personality to menu-bar runs.
+- Shortcut registration failures offer a retry; Reset Defaults retains a previous
+  working shortcut and notifies the user if macOS rejects the default.
+- `--performance-report` provides normalized settings and timing mode without
+  measuring throughput or exposing coordinates.
 - `--agent-help` publishes a versioned `symclick-agent/v1` contract.
 - `--agent-status` reports version, architecture, Accessibility state, and local
   capabilities without generating input.
+- `--agent-inspect` reports a read-only pointer and display snapshot for target confirmation.
 - `--agent-validate` normalizes a fixed-target plan without posting any events.
-- `--agent-run` executes only an explicitly confirmed finite click-count or duration
-  run and emits `ready`, `started`, and `completed` JSONL events.
+- `--agent-run` fails closed until agent execution can share visible status and
+  the menu-bar emergency stop.
 - Repository guidance now gives human contributors and coding agents one shared
   safety contract, including how to test without clicking an uncontrolled desktop.
 
@@ -64,8 +71,8 @@ plane.
 6. Change settings and start another run; the count resets and the new settings apply.
 
 For an AI-agent flow, use `--agent-status`, ask the user to confirm coordinates,
-run `--agent-validate`, show the normalized plan, require explicit confirmation,
-then stream the JSONL events from `--agent-run`.
+run `--agent-validate`, show the normalized plan, then have the user start and
+stop the run from the menu-bar app. Agent execution remains disabled.
 
 ## Easy wins included in this release
 
@@ -90,9 +97,8 @@ then stream the JSONL events from `--agent-run`.
 
 ## Hard wins intentionally deferred
 
-- Notarization is complete for v1.1.0: Apple accepted the archive, the ticket was
-  stapled, and `spctl` reports `source=Notarized Developer ID`. Future releases must
-  keep the same credentialed submit, staple, and validate gate.
+- Every distribution release needs Apple acceptance, a stapled ticket, and
+  `spctl` verification; a valid signature alone does not establish notarization.
 - A Login Item should be opt-in and requires a separate lifecycle/permissions review.
 - Per-app targets, profiles, overlays, analytics, and scripted sequences add state and
   permission complexity; they belong behind a measured user need.
@@ -108,9 +114,10 @@ Competing autoclickers often trade safety for a giant speed number or hide state
 window that disappears behind the game. SymClick keeps the controls in the menu bar,
 shows whether it is idle, arming, or clicking, makes every limit visible, and keeps a
 global stop shortcut easy to reach. The engine is native and dependency-free, while
-the local agent contract lets an AI inspect, validate, and confirm a bounded run
-without a cloud account or hidden service. The release is signed, notarized, stapled,
-and checksum-verifiable. Those are user value; accounts, telemetry, stealth injection,
+the local agent contract lets an AI inspect and validate a bounded plan without a
+cloud account or hidden service. Agent execution remains disabled until it shares
+visible stop controls. The distribution process requires signed, notarized, stapled,
+and checksum-verifiable releases. Those are user value; accounts, telemetry, stealth injection,
 and elaborate scripting are not.
 
 ## Release gates
