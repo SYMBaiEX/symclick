@@ -13,7 +13,7 @@ without making the app harder to stop or exposing a network control surface.
 ## Features
 
 - Global start/stop shortcut, defaulting to **Control–Option–C** (`⌃⌥C`)
-- Shortcut recorder for choosing your own key combination
+- Shortcut recorder for choosing your own key combination; if macOS rejects one, try another or press Escape to keep the previous shortcut. macOS may reserve shortcuts or other apps may use them, and not every conflict can be detected.
 - Configurable speed from 1 to 5,000 clicks per second
 - Left, right, and middle mouse buttons
 - Single- or double-click patterns
