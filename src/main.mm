@@ -1543,6 +1543,49 @@ int RunDiagnostics() {
     return 0;
 }
 
+int RunPerformanceReport() {
+    @autoreleasepool {
+        struct utsname systemInfo{};
+        uname(&systemInfo);
+        NSString *version = [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
+        if (![version isKindOfClass:NSString.class]) version = @"development";
+        NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+        double cps = [defaults objectForKey:kCPSPreference] ? [defaults doubleForKey:kCPSPreference] : kDefaultCPS;
+        int limitMode = std::clamp((int)[defaults integerForKey:kLimitModePreference], 0, 2);
+        double clicks = [defaults objectForKey:kClickLimitPreference] ? [defaults doubleForKey:kClickLimitPreference] : 1000;
+        double duration = [defaults objectForKey:kDurationSecondsPreference] ? [defaults doubleForKey:kDurationSecondsPreference] : 60;
+        NSString *architecture = [NSString stringWithUTF8String:systemInfo.machine];
+        if (!architecture) architecture = @"unknown";
+        NSDictionary *report = @{
+            @"schema": @"symclick-performance/v1",
+            @"version": version,
+            @"architecture": architecture,
+            @"accessibility": CGPreflightPostEventAccess() ? @"granted" : @"not-granted",
+            @"configuration": @{
+                @"cps": @(NormalizeCPS(cps)),
+                @"limit_mode": @[@"unlimited", @"click-count", @"duration"][limitMode],
+                @"click_limit": @(NormalizeClickLimit(clicks)),
+                @"duration_seconds": @(NormalizeDuration(duration)),
+                @"start_delay_seconds": @(NormalizeStartDelay([defaults doubleForKey:kStartDelayPreference])),
+                @"cps_min": @(kMinimumCPS), @"cps_max": @(kMaximumCPS),
+                @"click_limit_max": @(kMaximumClickLimit),
+                @"duration_seconds_max": @(kMaximumDurationSeconds)
+            },
+            @"timing_mode": @"mach-absolute-deadlines",
+            @"observed_throughput": [NSNull null]
+        };
+        NSError *error = nil;
+        NSData *data = [NSJSONSerialization dataWithJSONObject:report options:NSJSONWritingPrettyPrinted | NSJSONWritingSortedKeys error:&error];
+        if (!data) {
+            std::fprintf(stderr, "Could not serialize performance report\n");
+            return 1;
+        }
+        std::fwrite(data.bytes, 1, data.length, stdout);
+        std::printf("\n");
+    }
+    return 0;
+}
+
 int RunSmokeTest() {
     @autoreleasepool {
         if (CGMainDisplayID() == 0) {
@@ -1685,6 +1728,7 @@ int RunAgentCommand(int argc, const char *argv[], bool execute) {
 int main(int argc, const char *argv[]) {
     if (argc > 1 && std::string(argv[1]) == "--self-test") return RunSelfTests();
     if (argc > 1 && std::string(argv[1]) == "--diagnose") return RunDiagnostics();
+    if (argc > 1 && std::string(argv[1]) == "--performance-report") return RunPerformanceReport();
     if (argc > 1 && std::string(argv[1]) == "--smoke-test") return RunSmokeTest();
     if (argc > 1 && std::string(argv[1]) == "--agent-help") return RunAgentHelp();
     if (argc > 1 && std::string(argv[1]) == "--agent-status") return RunAgentStatus();

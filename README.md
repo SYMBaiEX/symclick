@@ -82,6 +82,16 @@ target app and macOS event handling. Start lower, and keep the stop shortcut eas
 reach. Some games and online services prohibit automation; use SymClick only where
 it is allowed.
 
+## Local performance report
+
+Run `SymClick.app/Contents/MacOS/SymClick --performance-report` to print a
+versioned JSON report for support. It includes the app version, architecture,
+Accessibility state, normalized saved speed and run bounds, and timing mode.
+The settings describe configuration; `observed_throughput` is `null` because the
+report does not run a benchmark or measure clicks. It reads local preferences
+and does not send data or post events. Coordinates, usernames, shortcuts, and
+secrets are excluded. Review the report before attaching it to an issue.
+
 ## Development
 
 ```sh
