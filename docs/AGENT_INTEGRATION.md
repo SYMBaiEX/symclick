@@ -75,3 +75,25 @@ reported count remains the number of logical clicks requested.
 This protocol is designed to be predictable and inspectable, not to hide
 automation from a game or service. The target application and its rules always
 take precedence.
+
+## Machine-readable schema and compatibility
+
+[`schemas/symclick-agent-v1.schema.json`](../schemas/symclick-agent-v1.schema.json)
+is a JSON Schema draft 2020-12 schema for **one JSONL event**. The `validated`
+and `ready` variants describe normalized plans, including their finite bound.
+Validate each event separately; the pretty-printed `--agent-help` response is a
+separate JSON document, not a JSONL event. A schema cannot verify event ordering,
+exit status, user confirmation, or whether an actual run completed.
+
+Within v1, new optional fields may be added to existing events. Consumers should
+ignore fields they do not recognize. Removing or changing the meaning or type of
+existing fields, changing required fields, adding event types or enum values, or
+changing safety bounds requires a new protocol major version. Consumers should
+reject unknown protocol versions and handle unknown events as unsupported rather
+than treating them as success. The schema permits extra fields for forward
+compatibility but deliberately restricts event names and existing enum values.
+
+To check the schema, documentation examples, and live safe command output, install
+`jsonschema` in a development-only Python environment and run
+`python tests/test_agent_schema.py`. This is not a native app dependency and the
+test never invokes `--agent-run`.

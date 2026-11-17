@@ -1,0 +1,343 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SymClick agent v1 JSONL event",
+  "description": "One emitted JSONL event, including normalized plans. The --agent-help document is separate.",
+  "allOf": [
+    {
+      "type": "object",
+      "properties": {
+        "protocol": {
+          "const": "symclick-agent/v1"
+        },
+        "event": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocol",
+        "event"
+      ]
+    },
+    {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "event": {
+              "const": "status"
+            },
+            "version": {
+              "type": "string"
+            },
+            "machine": {
+              "type": "string"
+            },
+            "accessibility": {
+              "enum": [
+                "granted",
+                "not-granted"
+              ]
+            },
+            "local_only": {
+              "const": true
+            },
+            "capabilities": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "contains": {
+                "const": "validate"
+              },
+              "allOf": [
+                {
+                  "contains": {
+                    "const": "run"
+                  }
+                }
+              ]
+            }
+          },
+          "required": [
+            "event",
+            "version",
+            "machine",
+            "accessibility",
+            "local_only",
+            "capabilities"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event": {
+              "const": "validated"
+            },
+            "valid": {
+              "const": true
+            },
+            "target": {
+              "type": "object",
+              "properties": {
+                "x": {
+                  "type": "number",
+                  "minimum": -100000,
+                  "maximum": 100000
+                },
+                "y": {
+                  "type": "number",
+                  "minimum": -100000,
+                  "maximum": 100000
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ]
+            },
+            "cps": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5000
+            },
+            "button": {
+              "enum": [
+                "left",
+                "right",
+                "middle"
+              ]
+            },
+            "pattern": {
+              "enum": [
+                "single",
+                "double"
+              ]
+            },
+            "jitter": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 20
+            },
+            "start_delay_seconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10
+            },
+            "bound": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "const": "clicks"
+                    },
+                    "value": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 10000000
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "const": "duration_seconds"
+                    },
+                    "value": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 86400
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ]
+                }
+              ]
+            }
+          },
+          "required": [
+            "event",
+            "valid",
+            "target",
+            "cps",
+            "button",
+            "pattern",
+            "jitter",
+            "start_delay_seconds",
+            "bound"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event": {
+              "const": "ready"
+            },
+            "valid": {
+              "const": true
+            },
+            "target": {
+              "type": "object",
+              "properties": {
+                "x": {
+                  "type": "number",
+                  "minimum": -100000,
+                  "maximum": 100000
+                },
+                "y": {
+                  "type": "number",
+                  "minimum": -100000,
+                  "maximum": 100000
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ]
+            },
+            "cps": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5000
+            },
+            "button": {
+              "enum": [
+                "left",
+                "right",
+                "middle"
+              ]
+            },
+            "pattern": {
+              "enum": [
+                "single",
+                "double"
+              ]
+            },
+            "jitter": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 20
+            },
+            "start_delay_seconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10
+            },
+            "bound": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "const": "clicks"
+                    },
+                    "value": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 10000000
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "const": "duration_seconds"
+                    },
+                    "value": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 86400
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ]
+                }
+              ]
+            }
+          },
+          "required": [
+            "event",
+            "valid",
+            "target",
+            "cps",
+            "button",
+            "pattern",
+            "jitter",
+            "start_delay_seconds",
+            "bound"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event": {
+              "const": "started"
+            }
+          },
+          "required": [
+            "event"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event": {
+              "const": "completed"
+            },
+            "clicks": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "reason": {
+              "enum": [
+                "click-limit",
+                "duration-limit"
+              ]
+            }
+          },
+          "required": [
+            "event",
+            "clicks",
+            "reason"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event": {
+              "const": "error"
+            },
+            "code": {
+              "enum": [
+                "invalid_request",
+                "accessibility_required"
+              ]
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "event",
+            "code",
+            "message"
+          ]
+        }
+      ]
+    }
+  ]
+}
