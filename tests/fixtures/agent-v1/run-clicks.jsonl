@@ -1,0 +1,3 @@
+{"protocol":"symclick-agent/v1","event":"ready","valid":true,"target":{"x":100,"y":200},"cps":100,"button":"left","pattern":"single","jitter":0,"start_delay_seconds":1,"bound":{"type":"clicks","value":3}}
+{"protocol":"symclick-agent/v1","event":"started"}
+{"protocol":"symclick-agent/v1","event":"completed","clicks":3,"reason":"click-limit"}

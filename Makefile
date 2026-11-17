@@ -45,6 +45,7 @@ agent-check: all
 	$(BINARY) --agent-help >/dev/null
 	$(BINARY) --agent-status >/dev/null
 	$(BINARY) --agent-validate --x 0 --y 0 --clicks 1 --cps 25 >/dev/null
+	python3 tests/agent_fixtures.py $(BINARY)
 
 verify: test agent-check
 	plutil -lint $(PLIST)
