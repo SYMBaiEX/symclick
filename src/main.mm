@@ -1268,8 +1268,11 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
 }
 
 - (void)buildPreferencesWindow {
+    NSScreen *screen = NSScreen.mainScreen;
+    CGFloat availableHeight = screen ? NSHeight(screen.visibleFrame) : 760;
+    CGFloat contentHeight = std::max<CGFloat>(240, std::min<CGFloat>(720, availableHeight - 32));
     _preferencesWindow = [[NSWindow alloc]
-        initWithContentRect:NSMakeRect(0, 0, 560, 720)
+        initWithContentRect:NSMakeRect(0, 0, 560, contentHeight)
                   styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
                     backing:NSBackingStoreBuffered
                       defer:NO];
@@ -1457,13 +1460,27 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     root.orientation = NSUserInterfaceLayoutOrientationVertical;
     root.alignment = NSLayoutAttributeLeading;
     root.spacing = 14;
-    [_preferencesWindow.contentView addSubview:root];
+    NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSZeroRect];
+    scroll.translatesAutoresizingMaskIntoConstraints = NO;
+    scroll.hasVerticalScroller = YES;
+    scroll.autohidesScrollers = YES;
+    scroll.drawsBackground = NO;
+    NSView *document = [NSView new];
+    document.translatesAutoresizingMaskIntoConstraints = NO;
+    [document addSubview:root];
+    scroll.documentView = document;
+    [_preferencesWindow.contentView addSubview:scroll];
 
     [NSLayoutConstraint activateConstraints:@[
-        [root.leadingAnchor constraintEqualToAnchor:_preferencesWindow.contentView.leadingAnchor constant:24],
-        [root.trailingAnchor constraintEqualToAnchor:_preferencesWindow.contentView.trailingAnchor constant:-24],
-        [root.topAnchor constraintEqualToAnchor:_preferencesWindow.contentView.topAnchor constant:22],
-        [root.bottomAnchor constraintLessThanOrEqualToAnchor:_preferencesWindow.contentView.bottomAnchor constant:-22],
+        [scroll.leadingAnchor constraintEqualToAnchor:_preferencesWindow.contentView.leadingAnchor],
+        [scroll.trailingAnchor constraintEqualToAnchor:_preferencesWindow.contentView.trailingAnchor],
+        [scroll.topAnchor constraintEqualToAnchor:_preferencesWindow.contentView.topAnchor],
+        [scroll.bottomAnchor constraintEqualToAnchor:_preferencesWindow.contentView.bottomAnchor],
+        [document.widthAnchor constraintEqualToAnchor:scroll.contentView.widthAnchor],
+        [root.leadingAnchor constraintEqualToAnchor:document.leadingAnchor constant:24],
+        [root.trailingAnchor constraintEqualToAnchor:document.trailingAnchor constant:-24],
+        [root.topAnchor constraintEqualToAnchor:document.topAnchor constant:22],
+        [root.bottomAnchor constraintEqualToAnchor:document.bottomAnchor constant:-22],
         [banner.widthAnchor constraintEqualToAnchor:root.widthAnchor],
         [permissionRow.widthAnchor constraintEqualToAnchor:root.widthAnchor],
         [buttonRow.widthAnchor constraintEqualToAnchor:root.widthAnchor],
