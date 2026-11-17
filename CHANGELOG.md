@@ -15,6 +15,7 @@ All notable changes to SymClick are documented here. This project follows
 
 ### Improved
 
+- Preferences now feature an original comic-inspired illustrated banner while retaining native controls.
 - `make verify` now checks both universal architectures with the current `lipo`
   command syntax and exercises the agent contract.
 - Headless smoke checks report an explicit skip when no interactive display session
