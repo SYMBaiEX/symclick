@@ -7,8 +7,8 @@
 SymClick is a tiny native macOS menu-bar autoclicker. It uses AppKit for the menu,
 Carbon for a global start/stop hotkey, and a dedicated Objective-C++/Core Graphics
 click engine. There are no third-party dependencies, telemetry, network requests,
-or background services. The v1.2 engine adds a safety start delay, resettable
-preferences, diagnostics, and a launch smoke path without making the app harder to stop.
+or background services. The v1.3 engine adds a local, bounded JSONL agent contract
+without making the app harder to stop or exposing a network control surface.
 
 ## Features
 
@@ -23,6 +23,7 @@ preferences, diagnostics, and a launch smoke path without making the app harder 
 - Optional 0–10 second start delay so you can move to the target safely
 - Live click count and run-limit status in the menu bar
 - Reset Defaults action and a diagnostics/smoke-test path for maintainers
+- Local `--agent-status`, `--agent-validate`, and explicitly confirmed `--agent-run` commands
 - Changes to settings apply while the clicker is running
 - Native menu-bar status with no Dock icon
 - Universal Apple Silicon and Intel build
@@ -32,8 +33,10 @@ preferences, diagnostics, and a launch smoke path without making the app harder 
 Download the universal macOS archive from [GitHub Releases](https://github.com/SYMBaiEX/symclick/releases/latest),
 extract it, and move `SymClick.app` to `/Applications`.
 
-The v1.2.0 binary is Developer ID–signed with hardened runtime, notarized, and
-stapled. Release checksums are published beside each archive.
+The published v1.2.0 binary is Developer ID–signed with hardened runtime,
+notarized, and stapled. Release checksums are published beside each archive.
+The v1.3 agent contract is currently in the main branch and will be distributed
+only after its normal signing and notarization gates pass.
 
 ### Build from source
 
@@ -85,6 +88,7 @@ it is allowed.
 make test
 make diagnostics
 make smoke
+make agent-check
 make verify
 make package
 make clean
@@ -92,6 +96,11 @@ make clean
 
 The release design and deferred roadmap are documented in
 [`docs/NEXT_VERSION_PLAN.md`](docs/NEXT_VERSION_PLAN.md).
+
+AI agents and automation clients should start with
+[`docs/AGENT_INTEGRATION.md`](docs/AGENT_INTEGRATION.md). The protocol is
+local-only, fixed-target, finite, explicitly confirmed, and JSONL-based so an
+agent can validate a plan before any click is generated.
 
 The complete app is implemented in [`src/main.mm`](src/main.mm). The release build
 uses `-O3`, link-time optimization, and produces one `.app` bundle. Local builds are

@@ -1,0 +1,30 @@
+name: Agent integration task
+description: Improve the safe local workflow for AI agents and automation clients
+title: "[Agent]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Agent workflow problem
+      description: What should an agent be able to inspect, validate, or run more reliably?
+    validations:
+      required: true
+  - type: textarea
+    id: contract
+    attributes:
+      label: Proposed contract
+      description: Include command shape, JSONL events, error behavior, and compatibility expectations.
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety constraints
+      options:
+        - label: The change stays local-only and adds no telemetry or network listener.
+          required: true
+        - label: Real clicks remain explicitly confirmed, bounded, and cancellable.
+          required: true
+        - label: The change does not bypass Accessibility or anti-cheat controls.
+          required: true

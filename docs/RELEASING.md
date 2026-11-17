@@ -10,6 +10,7 @@ This checklist is for project maintainers.
    make clean verify
    make diagnostics
    make smoke
+   make agent-check
    ```
 
 4. Build the release with a Developer ID identity:

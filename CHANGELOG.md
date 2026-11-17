@@ -3,6 +3,23 @@
 All notable changes to SymClick are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased] (v1.3.0)
+
+### Added
+
+- Local `symclick-agent/v1` JSONL contract for status, dry-run validation, and
+  explicitly confirmed finite runs.
+- Agent runs require a fixed target, a click-count or duration bound, and a
+  preflight Accessibility check; no network listener or background service is added.
+- Repository-level `AGENTS.md`, agent integration documentation, and an agent issue form.
+
+### Improved
+
+- `make verify` now checks both universal architectures with the current `lipo`
+  command syntax and exercises the agent contract.
+- Headless smoke checks report an explicit skip when no interactive display session
+  exists instead of aborting or claiming a GUI launch was tested.
+
 ## [1.2.0] - 2026-09-13
 
 ### Added
@@ -48,3 +65,4 @@ All notable changes to SymClick are documented here. This project follows
 [1.2.0]: https://github.com/SYMBaiEX/symclick/releases/tag/v1.2.0
 [1.1.0]: https://github.com/SYMBaiEX/symclick/releases/tag/v1.1.0
 [1.0.0]: https://github.com/SYMBaiEX/symclick/releases/tag/v1.0.0
+[Unreleased]: https://github.com/SYMBaiEX/symclick/compare/v1.2.0...HEAD

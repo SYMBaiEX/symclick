@@ -19,7 +19,7 @@ ifneq ($(SIGN_IDENTITY),-)
 CODESIGN_FLAGS += --timestamp --options runtime
 endif
 
-.PHONY: all run test diagnostics smoke verify package install clean
+.PHONY: all run test diagnostics smoke agent-check verify package install clean
 
 all: $(BINARY)
 
@@ -41,9 +41,15 @@ diagnostics: all
 smoke: all
 	$(BINARY) --smoke-test
 
-verify: test
+agent-check: all
+	$(BINARY) --agent-help >/dev/null
+	$(BINARY) --agent-status >/dev/null
+	$(BINARY) --agent-validate --x 0 --y 0 --clicks 1 --cps 25 >/dev/null
+
+verify: test agent-check
 	plutil -lint $(PLIST)
-	lipo $(BINARY) -verify_arch arm64 x86_64
+	lipo -verify_arch arm64 $(BINARY)
+	lipo -verify_arch x86_64 $(BINARY)
 	codesign --verify --deep --strict --verbose=2 $(APP_BUNDLE)
 
 package: all

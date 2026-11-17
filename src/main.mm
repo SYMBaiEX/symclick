@@ -7,15 +7,21 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cerrno>
 #include <cstdio>
+#include <cstdlib>
+#include <iterator>
 #include <mach/mach_time.h>
+#include <limits>
 #include <pthread.h>
 #include <random>
 #include <string>
 #include <thread>
 #include <sys/utsname.h>
+#include <vector>
 
 namespace {
 
@@ -74,6 +80,180 @@ double NormalizeJitter(double value) {
 double NormalizeStartDelay(double value) {
     if (!std::isfinite(value)) return kDefaultStartDelaySeconds;
     return std::clamp(std::round(value), 0.0, kMaximumStartDelaySeconds);
+}
+
+constexpr double kDefaultAgentStartDelaySeconds = 1.0;
+constexpr double kMaximumAgentCoordinate = 100'000.0;
+
+struct AgentOptions {
+    double cps = kDefaultCPS;
+    double x = 0.0;
+    double y = 0.0;
+    double jitter = 0.0;
+    double startDelay = kDefaultAgentStartDelaySeconds;
+    uint64_t clicks = 0;
+    double duration = 0.0;
+    int button = 0;
+    int pattern = 0;
+    bool hasX = false;
+    bool hasY = false;
+    bool hasClicks = false;
+    bool hasDuration = false;
+    bool confirmed = false;
+};
+
+bool ParseAgentDouble(const std::string &text, double *value) {
+    if (text.empty()) return false;
+    char *end = nullptr;
+    errno = 0;
+    const double parsed = std::strtod(text.c_str(), &end);
+    if (errno == ERANGE || end == text.c_str() || *end != '\0' || !std::isfinite(parsed)) {
+        return false;
+    }
+    *value = parsed;
+    return true;
+}
+
+bool ParseAgentUInt64(const std::string &text, uint64_t *value) {
+    if (text.empty() || text.front() == '-') return false;
+    char *end = nullptr;
+    errno = 0;
+    const unsigned long long parsed = std::strtoull(text.c_str(), &end, 10);
+    if (errno == ERANGE || end == text.c_str() || *end != '\0') return false;
+    *value = static_cast<uint64_t>(parsed);
+    return true;
+}
+
+bool NextAgentValue(int argc, const char *argv[], int *index, std::string *value,
+                    std::string *error) {
+    if (*index + 1 >= argc) {
+        *error = std::string("missing value for ") + argv[*index];
+        return false;
+    }
+    *value = argv[++(*index)];
+    return true;
+}
+
+bool ParseAgentOptions(int argc, const char *argv[], AgentOptions *options,
+                       bool requireConfirmation, std::string *error) {
+    for (int index = 2; index < argc; ++index) {
+        const std::string argument = argv[index];
+        std::string value;
+        if (argument == "--confirm") {
+            options->confirmed = true;
+        } else if (argument == "--cps" || argument == "--x" || argument == "--y" ||
+                   argument == "--jitter" || argument == "--delay" || argument == "--clicks" ||
+                   argument == "--duration" || argument == "--button" || argument == "--pattern") {
+            if (!NextAgentValue(argc, argv, &index, &value, error)) return false;
+            if (argument == "--cps" && !ParseAgentDouble(value, &options->cps)) {
+                *error = "--cps must be a finite number";
+                return false;
+            }
+            if (argument == "--x" && !(options->hasX = ParseAgentDouble(value, &options->x))) {
+                *error = "--x must be a finite number";
+                return false;
+            }
+            if (argument == "--y" && !(options->hasY = ParseAgentDouble(value, &options->y))) {
+                *error = "--y must be a finite number";
+                return false;
+            }
+            if (argument == "--jitter" && !ParseAgentDouble(value, &options->jitter)) {
+                *error = "--jitter must be a finite number";
+                return false;
+            }
+            if (argument == "--delay" && !ParseAgentDouble(value, &options->startDelay)) {
+                *error = "--delay must be a finite number";
+                return false;
+            }
+            if (argument == "--clicks") {
+                if (options->hasClicks || !ParseAgentUInt64(value, &options->clicks)) {
+                    *error = "--clicks must be a positive integer and may appear once";
+                    return false;
+                }
+                options->hasClicks = true;
+            }
+            if (argument == "--duration") {
+                if (options->hasDuration || !ParseAgentDouble(value, &options->duration)) {
+                    *error = "--duration must be a finite number and may appear once";
+                    return false;
+                }
+                options->hasDuration = true;
+            }
+            if (argument == "--button") {
+                if (value == "left") options->button = 0;
+                else if (value == "right") options->button = 1;
+                else if (value == "middle") options->button = 2;
+                else {
+                    *error = "--button must be left, right, or middle";
+                    return false;
+                }
+            }
+            if (argument == "--pattern") {
+                if (value == "single") options->pattern = 0;
+                else if (value == "double") options->pattern = 1;
+                else {
+                    *error = "--pattern must be single or double";
+                    return false;
+                }
+            }
+        } else {
+            *error = "unknown agent option: " + argument;
+            return false;
+        }
+    }
+
+    if (!options->hasX || !options->hasY) {
+        *error = "--x and --y are required; agent runs always use a fixed target";
+        return false;
+    }
+    if (!options->hasClicks && !options->hasDuration) {
+        *error = "provide exactly one finite bound: --clicks or --duration";
+        return false;
+    }
+    if (options->hasClicks && options->hasDuration) {
+        *error = "provide exactly one finite bound: --clicks or --duration, not both";
+        return false;
+    }
+    if (requireConfirmation && !options->confirmed) {
+        *error = "--confirm is required for a real click run; use --agent-validate for a dry run";
+        return false;
+    }
+    if (options->cps < kMinimumCPS || options->cps > kMaximumCPS ||
+        options->jitter < 0.0 || options->jitter > kMaximumJitterPixels ||
+        options->startDelay < 0.0 || options->startDelay > kMaximumStartDelaySeconds ||
+        options->x < -kMaximumAgentCoordinate || options->x > kMaximumAgentCoordinate ||
+        options->y < -kMaximumAgentCoordinate || options->y > kMaximumAgentCoordinate) {
+        *error = "agent values are outside the documented safety bounds";
+        return false;
+    }
+    if (options->hasClicks && (options->clicks < 1 || options->clicks > kMaximumClickLimit)) {
+        *error = "--clicks must be between 1 and 10000000";
+        return false;
+    }
+    if (options->hasDuration && (options->duration < 1.0 || options->duration > kMaximumDurationSeconds)) {
+        *error = "--duration must be between 1 and 86400 seconds";
+        return false;
+    }
+    options->cps = NormalizeCPS(options->cps);
+    options->jitter = NormalizeJitter(options->jitter);
+    options->startDelay = NormalizeStartDelay(options->startDelay);
+    return true;
+}
+
+std::string EscapeJson(const std::string &value) {
+    std::string escaped;
+    escaped.reserve(value.size());
+    for (const char character : value) {
+        switch (character) {
+            case '\\': escaped += "\\\\"; break;
+            case '"': escaped += "\\\""; break;
+            case '\n': escaped += "\\n"; break;
+            case '\r': escaped += "\\r"; break;
+            case '\t': escaped += "\\t"; break;
+            default: escaped += character; break;
+        }
+    }
+    return escaped;
 }
 
 NSString *KeyName(UInt32 keyCode) {
@@ -1322,6 +1502,28 @@ int RunSelfTests() {
         if (![ShortcutDisplay(kVK_F6, 0) isEqualToString:@"F6"]) return 7;
         if (CarbonModifiersFromEvent(NSEventModifierFlagCommand | NSEventModifierFlagShift) !=
             (cmdKey | shiftKey)) return 8;
+        {
+            const char *arguments[] = {"SymClick", "--agent-validate", "--x", "100", "--y", "200",
+                                       "--clicks", "3", "--cps", "100"};
+            AgentOptions options;
+            std::string error;
+            if (!ParseAgentOptions(static_cast<int>(std::size(arguments)), arguments, &options, false, &error)) return 9;
+            if (!options.hasX || !options.hasY || !options.hasClicks || options.clicks != 3 || options.cps != 100) return 10;
+        }
+        {
+            const char *arguments[] = {"SymClick", "--agent-run", "--x", "100", "--y", "200",
+                                       "--clicks", "3"};
+            AgentOptions options;
+            std::string error;
+            if (ParseAgentOptions(static_cast<int>(std::size(arguments)), arguments, &options, true, &error)) return 11;
+        }
+        {
+            const char *arguments[] = {"SymClick", "--agent-run", "--x", "100", "--y", "200",
+                                       "--clicks", "3", "--duration", "5", "--confirm"};
+            AgentOptions options;
+            std::string error;
+            if (ParseAgentOptions(static_cast<int>(std::size(arguments)), arguments, &options, true, &error)) return 12;
+        }
         NSLog(@"SymClick self-test passed");
     }
     return 0;
@@ -1343,6 +1545,10 @@ int RunDiagnostics() {
 
 int RunSmokeTest() {
     @autoreleasepool {
+        if (CGMainDisplayID() == 0) {
+            std::fprintf(stderr, "SymClick smoke test skipped: no interactive display session\n");
+            return 0;
+        }
         NSApplication *application = NSApplication.sharedApplication;
         [application setActivationPolicy:NSApplicationActivationPolicyAccessory];
         AppDelegate *delegate = [AppDelegate new];
@@ -1355,10 +1561,135 @@ int RunSmokeTest() {
     return 0;
 }
 
+const char *AgentBundleVersion() {
+    id bundledVersion = [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
+    if ([bundledVersion isKindOfClass:NSString.class]) return [bundledVersion UTF8String];
+    return "development";
+}
+
+void PrintAgentError(const std::string &error, int exitCode) {
+    std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"error\",\"code\":\"invalid_request\",\"message\":\"%s\"}\n",
+                EscapeJson(error).c_str());
+    (void)exitCode;
+}
+
+void PrintAgentConfig(const AgentOptions &options, const char *eventName) {
+    const char *button = options.button == 1 ? "right" : options.button == 2 ? "middle" : "left";
+    const char *pattern = options.pattern == 1 ? "double" : "single";
+    if (options.hasClicks) {
+        std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"%s\",\"valid\":true,"
+                    "\"target\":{\"x\":%.3f,\"y\":%.3f},\"cps\":%.0f,\"button\":\"%s\","
+                    "\"pattern\":\"%s\",\"jitter\":%.0f,\"start_delay_seconds\":%.0f,"
+                    "\"bound\":{\"type\":\"clicks\",\"value\":%llu}}\n",
+                    eventName, options.x, options.y, options.cps, button, pattern, options.jitter,
+                    options.startDelay, static_cast<unsigned long long>(options.clicks));
+    } else {
+        std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"%s\",\"valid\":true,"
+                    "\"target\":{\"x\":%.3f,\"y\":%.3f},\"cps\":%.0f,\"button\":\"%s\","
+                    "\"pattern\":\"%s\",\"jitter\":%.0f,\"start_delay_seconds\":%.0f,"
+                    "\"bound\":{\"type\":\"duration_seconds\",\"value\":%.0f}}\n",
+                    eventName, options.x, options.y, options.cps, button, pattern, options.jitter,
+                    options.startDelay, options.duration);
+    }
+}
+
+int RunAgentHelp() {
+    std::printf(
+        "{\n"
+        "  \"protocol\": \"symclick-agent/v1\",\n"
+        "  \"name\": \"SymClick\",\n"
+        "  \"version\": \"%s\",\n"
+        "  \"commands\": {\n"
+        "    \"status\": \"SymClick --agent-status\",\n"
+        "    \"validate\": \"SymClick --agent-validate --x <px> --y <px> --clicks <n> --cps <n>\",\n"
+        "    \"run\": \"SymClick --agent-run --confirm --x <px> --y <px> --clicks <n> --cps <n>\"\n"
+        "  },\n"
+        "  \"safety\": {\n"
+        "    \"requires_confirmation\": true,\n"
+        "    \"requires_fixed_target\": true,\n"
+        "    \"requires_finite_bound\": true,\n"
+        "    \"default_start_delay_seconds\": 1,\n"
+        "    \"max_cps\": 5000,\n"
+        "    \"max_clicks\": 10000000,\n"
+        "    \"max_duration_seconds\": 86400\n"
+        "  },\n"
+        "  \"events\": [\"ready\", \"started\", \"completed\", \"error\"]\n"
+        "}\n",
+        AgentBundleVersion());
+    return 0;
+}
+
+int RunAgentStatus() {
+    @autoreleasepool {
+        struct utsname systemInfo{};
+        uname(&systemInfo);
+        std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"status\","
+                    "\"version\":\"%s\",\"machine\":\"%s\",\"accessibility\":\"%s\","
+                    "\"local_only\":true,\"capabilities\":[\"validate\",\"run\"]}\n",
+                    AgentBundleVersion(), systemInfo.machine,
+                    CGPreflightPostEventAccess() ? "granted" : "not-granted");
+    }
+    return 0;
+}
+
+int RunAgentCommand(int argc, const char *argv[], bool execute) {
+    @autoreleasepool {
+        AgentOptions options;
+        std::string error;
+        if (!ParseAgentOptions(argc, argv, &options, execute, &error)) {
+            PrintAgentError(error, 2);
+            return 2;
+        }
+        if (!execute) {
+            PrintAgentConfig(options, "validated");
+            return 0;
+        }
+        if (!CGPreflightPostEventAccess()) {
+            std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"error\","
+                        "\"code\":\"accessibility_required\",\"message\":\"Enable SymClick in Privacy & Security > Accessibility\"}\n");
+            return 3;
+        }
+
+        ClickEngine engine;
+        engine.setClicksPerSecond(options.cps);
+        engine.setMouseButton(options.button);
+        engine.setLocationMode(1);
+        engine.setFixedLocation(CGPointMake(options.x, options.y));
+        engine.setClickPattern(options.pattern);
+        engine.setJitterPixels(options.jitter);
+        engine.setStartDelaySeconds(options.startDelay);
+        if (options.hasClicks) {
+            engine.setLimitMode(1);
+            engine.setClickLimit(options.clicks);
+        } else {
+            engine.setLimitMode(2);
+            engine.setDurationSeconds(options.duration);
+        }
+
+        PrintAgentConfig(options, "ready");
+        engine.start();
+        std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"started\"}\n");
+        std::fflush(stdout);
+        while (engine.isRunning()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        engine.stop();
+        const char *reason = options.hasClicks ? "click-limit" : "duration-limit";
+        std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"completed\","
+                    "\"clicks\":%llu,\"reason\":\"%s\"}\n",
+                    static_cast<unsigned long long>(engine.clickCount()), reason);
+    }
+    return 0;
+}
+
 int main(int argc, const char *argv[]) {
     if (argc > 1 && std::string(argv[1]) == "--self-test") return RunSelfTests();
     if (argc > 1 && std::string(argv[1]) == "--diagnose") return RunDiagnostics();
     if (argc > 1 && std::string(argv[1]) == "--smoke-test") return RunSmokeTest();
+    if (argc > 1 && std::string(argv[1]) == "--agent-help") return RunAgentHelp();
+    if (argc > 1 && std::string(argv[1]) == "--agent-status") return RunAgentStatus();
+    if (argc > 1 && std::string(argv[1]) == "--agent-validate") return RunAgentCommand(argc, argv, false);
+    if (argc > 1 && std::string(argv[1]) == "--agent-run") return RunAgentCommand(argc, argv, true);
     @autoreleasepool {
         NSApplication *application = NSApplication.sharedApplication;
         AppDelegate *delegate = [AppDelegate new];
