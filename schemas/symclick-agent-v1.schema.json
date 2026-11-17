@@ -48,14 +48,7 @@
               },
               "contains": {
                 "const": "validate"
-              },
-              "allOf": [
-                {
-                  "contains": {
-                    "const": "run"
-                  }
-                }
-              ]
+              }
             }
           },
           "required": [
@@ -361,6 +354,7 @@
               "enum": [
                 "invalid_request",
                 "accessibility_required",
+                "run_unavailable",
                 "signal_setup_failed",
                 "event_source_failed",
                 "display_unavailable",

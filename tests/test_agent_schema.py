@@ -29,7 +29,9 @@ def command(*args, expected=0):
     validator.validate(event)
     return event
 
-command("--agent-status")
+status = command("--agent-status")
+validator.validate(dict(status, capabilities=["validate"]))
+validator.validate(dict(status, capabilities=["inspect", "validate"]))
 plan = command("--agent-validate", "--x", "-2.5", "--y", "200", "--clicks", "3", "--cps", "100")
 command("--agent-validate", "--x", "0", "--y", "0", "--duration", "1.5")
 command("--agent-validate", expected=2)
@@ -45,7 +47,7 @@ for event in (
      "displays":[{"id":1,"bounds":{"x":-100,"y":0,"width":100,"height":100},"scale":None}]},
     {"protocol":"symclick-agent/v1", "event":"error", "code":"accessibility_required", "message":"Permission required"},
     *({"protocol":"symclick-agent/v1", "event":"error", "code":code, "message":"Unavailable"}
-      for code in ("signal_setup_failed", "event_source_failed", "display_unavailable", "pointer_unavailable")),
+      for code in ("run_unavailable", "signal_setup_failed", "event_source_failed", "display_unavailable", "pointer_unavailable")),
 ):
     validator.validate(event)
 for change in ({"protocol":"symclick-agent/v2"}, {"event":"unknown"}, {"bound":{"type":"clicks", "value":0}}, {"bound":{"type":"duration_seconds", "value":86401}}):
