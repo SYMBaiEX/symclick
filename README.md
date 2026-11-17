@@ -110,6 +110,9 @@ timestamped Developer ID build.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the contributor workflow and
 [SECURITY.md](SECURITY.md) for private vulnerability reporting.
 
+For the project-associated token mint and external data links, see
+[`docs/TOKEN.md`](docs/TOKEN.md). The app does not require a token or wallet.
+
 ## License
 
 SymClick is available under the [MIT License](LICENSE).
