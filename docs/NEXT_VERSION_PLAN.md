@@ -36,6 +36,7 @@ plane.
 - Optional 0–10 second start delay: the app visibly arms, then begins clicking; the
   same shortcut cancels the countdown.
 - Reset Defaults restores the shortcut and every click setting after confirmation.
+- Preferences offer an optional static, coalesced CLICK! indicator for menu-bar runs.
 - `--diagnose` reports the bundle version, host architecture, and Accessibility state.
 - `--smoke-test` boots the real AppKit delegate/menu-bar lifecycle and exits cleanly;
   `make diagnostics` and `make smoke` make these release gates repeatable.

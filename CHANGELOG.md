@@ -7,6 +7,8 @@ All notable changes to SymClick are documented here. This project follows
 
 ### Added
 
+- Optional, off-by-default CLICK! visual indicator for menu-bar runs.
+
 - Local `symclick-agent/v1` JSONL contract for status, dry-run validation, and
   explicitly confirmed finite runs.
 - Agent runs require a fixed target, a click-count or duration bound, and a

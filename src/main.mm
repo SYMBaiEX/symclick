@@ -17,6 +17,7 @@
 #include <mach/mach_time.h>
 #include <limits>
 #include <pthread.h>
+#include <QuartzCore/QuartzCore.h>
 #include <random>
 #include <string>
 #include <thread>
@@ -52,6 +53,11 @@ NSString *const kDurationSecondsPreference = @"durationSeconds";
 NSString *const kClickPatternPreference = @"clickPattern";
 NSString *const kJitterPixelsPreference = @"jitterPixels";
 NSString *const kStartDelayPreference = @"startDelaySeconds";
+NSString *const kClickEffectPreference = @"clickEffectEnabled";
+
+bool ShouldShowClickEffect(bool enabled, uint64_t count, uint64_t previousCount) {
+    return enabled && count > 0 && count != previousCount;
+}
 
 double NormalizeCPS(double value) {
     if (!std::isfinite(value)) {
@@ -674,6 +680,29 @@ CGPoint CurrentPointerLocation() {
 
 @end
 
+// A static, short-lived badge: no animation runs between updates, including when
+// macOS Reduce Motion is enabled. The window never accepts pointer events.
+@interface ClickEffectView : NSView
+@end
+@implementation ClickEffectView
+- (void)drawRect:(NSRect)dirtyRect {
+    (void)dirtyRect;
+    NSBezierPath *bubble = [NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds, 3, 3) xRadius:14 yRadius:14];
+    [NSColor.systemYellowColor setFill];
+    [bubble fill];
+    [NSColor.blackColor setStroke];
+    bubble.lineWidth = 3;
+    [bubble stroke];
+    NSDictionary *attributes = @{NSFontAttributeName: [NSFont boldSystemFontOfSize:22],
+                                 NSForegroundColorAttributeName: NSColor.blackColor};
+    NSString *text = @"CLICK!";
+    NSSize size = [text sizeWithAttributes:attributes];
+    [text drawAtPoint:NSMakePoint((self.bounds.size.width - size.width) / 2,
+                                 (self.bounds.size.height - size.height) / 2)
+       withAttributes:attributes];
+}
+@end
+
 @implementation AppDelegate {
     ClickEngine _engine;
     EventHotKeyRef _hotKey;
@@ -722,6 +751,11 @@ CGPoint CurrentPointerLocation() {
     NSTextField *_fixedLocationLabel;
     NSTextField *_permissionLabel;
     NSTimer *_statusTimer;
+    NSButton *_effectCheckbox;
+    NSWindow *_effectWindow;
+    BOOL _effectEnabled;
+    uint64_t _lastEffectCount;
+    CFTimeInterval _effectExpires;
 }
 
 static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *userData) {
@@ -755,8 +789,10 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
         kClickPatternPreference: @0,
         kJitterPixelsPreference: @0.0,
         kStartDelayPreference: @(kDefaultStartDelaySeconds),
+        kClickEffectPreference: @NO,
     }];
 
+    _effectEnabled = [defaults boolForKey:kClickEffectPreference];
     _cps = NormalizeCPS([defaults doubleForKey:kCPSPreference]);
     _mouseButton = std::clamp((int)[defaults integerForKey:kMouseButtonPreference], 0, 2);
     _hotKeyCode = (UInt32)[defaults integerForKey:kHotKeyCodePreference];
@@ -804,6 +840,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     if (_hotKey) UnregisterEventHotKey(_hotKey);
     if (_hotKeyHandler) RemoveEventHandler(_hotKeyHandler);
     [_statusTimer invalidate];
+    [_effectWindow orderOut:nil];
 }
 
 - (void)buildMenu {
@@ -967,6 +1004,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
         }
     }
 
+    _lastEffectCount = 0;
     _engine.start();
     [self updateUI];
 }
@@ -1084,7 +1122,45 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
 
 - (void)pollEngine:(NSTimer *)timer {
     (void)timer;
+    const uint64_t count = _engine.clickCount();
+    if (ShouldShowClickEffect(_effectEnabled, count, _lastEffectCount)) {
+        [self showClickEffect];
+    }
+    _lastEffectCount = count;
+    if (_effectWindow.visible && (!_effectEnabled || CACurrentMediaTime() >= _effectExpires)) {
+        [_effectWindow orderOut:nil];
+    }
     [self updateUI];
+}
+
+- (void)showClickEffect {
+    if (!_effectWindow) {
+        _effectWindow = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 110, 48)
+            styleMask:NSWindowStyleMaskBorderless backing:NSBackingStoreBuffered defer:NO];
+        _effectWindow.opaque = NO;
+        _effectWindow.backgroundColor = NSColor.clearColor;
+        _effectWindow.hasShadow = YES;
+        _effectWindow.ignoresMouseEvents = YES;
+        _effectWindow.level = NSFloatingWindowLevel;
+        _effectWindow.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces |
+            NSWindowCollectionBehaviorFullScreenAuxiliary | NSWindowCollectionBehaviorIgnoresCycle;
+        _effectWindow.contentView = [[ClickEffectView alloc] initWithFrame:NSMakeRect(0, 0, 110, 48)];
+    }
+    NSPoint point = NSEvent.mouseLocation;
+    if (_locationMode == 1 && NSScreen.screens.count) {
+        // Quartz uses a top-left origin on the primary screen; AppKit uses bottom-left.
+        point = NSMakePoint(_fixedLocation.x, NSMaxY(NSScreen.screens.firstObject.frame) - _fixedLocation.y);
+    }
+    [_effectWindow setFrameOrigin:NSMakePoint(point.x + 12, point.y + 12)];
+    [_effectWindow orderFrontRegardless];
+    _effectExpires = CACurrentMediaTime() + 0.2;
+}
+
+- (void)effectChanged:(NSButton *)sender {
+    _effectEnabled = sender.state == NSControlStateValueOn;
+    [NSUserDefaults.standardUserDefaults setBool:_effectEnabled forKey:kClickEffectPreference];
+    _lastEffectCount = _engine.clickCount();
+    if (!_effectEnabled) [_effectWindow orderOut:nil];
 }
 
 - (void)updateUI {
@@ -1137,6 +1213,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
 
 - (void)refreshPreferencesControls {
     if (!_preferencesWindow) return;
+    _effectCheckbox.state = _effectEnabled ? NSControlStateValueOn : NSControlStateValueOff;
     [_patternPopup selectItemAtIndex:_clickPattern];
     [_locationPopup selectItemAtIndex:_locationMode];
     [_limitPopup selectItemAtIndex:_limitMode];
@@ -1192,7 +1269,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
 
 - (void)buildPreferencesWindow {
     _preferencesWindow = [[NSWindow alloc]
-        initWithContentRect:NSMakeRect(0, 0, 560, 680)
+        initWithContentRect:NSMakeRect(0, 0, 560, 720)
                   styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
                     backing:NSBackingStoreBuffered
                       defer:NO];
@@ -1333,6 +1410,8 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     startDelayControls.orientation = NSUserInterfaceLayoutOrientationHorizontal;
     startDelayControls.spacing = 8;
 
+    _effectCheckbox = [NSButton checkboxWithTitle:@"Show CLICK! effect" target:self action:@selector(effectChanged:)];
+
     NSGridView *grid = [NSGridView gridViewWithViews:@[
         @[shortcutLabel, _recorderButton],
         @[speedLabel, speedControls],
@@ -1372,7 +1451,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     buttonRow.distribution = NSStackViewDistributionFill;
 
     NSStackView *root = [NSStackView stackViewWithViews:@[
-        banner, intro, grid, speedHint, permissionRow, buttonRow,
+        banner, intro, grid, _effectCheckbox, speedHint, permissionRow, buttonRow,
     ]];
     root.translatesAutoresizingMaskIntoConstraints = NO;
     root.orientation = NSUserInterfaceLayoutOrientationVertical;
@@ -1499,6 +1578,9 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     [self applyClickPattern:0];
     [self applyJitter:0.0];
     [self applyStartDelay:kDefaultStartDelaySeconds];
+    _effectEnabled = NO;
+    [NSUserDefaults.standardUserDefaults setBool:NO forKey:kClickEffectPreference];
+    [_effectWindow orderOut:nil];
     _fixedLocation = CGPointZero;
     _hasFixedLocation = false;
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
@@ -1582,6 +1664,8 @@ int RunSelfTests() {
             std::string error;
             if (ParseAgentOptions(static_cast<int>(std::size(arguments)), arguments, &options, true, &error)) return 12;
         }
+        if (ShouldShowClickEffect(false, 1, 0) || ShouldShowClickEffect(true, 0, 0) ||
+            ShouldShowClickEffect(true, 10, 10) || !ShouldShowClickEffect(true, 10, 1)) return 13;
         NSLog(@"SymClick self-test passed");
     }
     return 0;
