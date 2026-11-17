@@ -572,6 +572,16 @@ CGPoint CurrentPointerLocation() {
 
 @class AppDelegate;
 
+// Register first so a failed replacement never releases the working shortcut.
+template <typename Register, typename Unregister>
+bool ReplaceHotKey(EventHotKeyRef &current, Register registerNew, Unregister unregisterOld) {
+    EventHotKeyRef replacement = nullptr;
+    if (registerNew(&replacement) != noErr || !replacement) return false;
+    if (current) unregisterOld(current);
+    current = replacement;
+    return true;
+}
+
 @interface HotKeyRecorderButton : NSButton
 @property(nonatomic, weak) AppDelegate *recorderDelegate;
 @property(nonatomic) BOOL recording;
@@ -876,14 +886,11 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
 - (BOOL)registerHotKeyCode:(UInt32)keyCode modifiers:(UInt32)modifiers {
     if (_hotKey && keyCode == _hotKeyCode && modifiers == _hotKeyModifiers) return YES;
 
-    EventHotKeyRef newHotKey = nullptr;
     EventHotKeyID identifier{ kHotKeySignature, kHotKeyID };
-    const OSStatus status = RegisterEventHotKey(keyCode, modifiers, identifier,
-                                                GetApplicationEventTarget(), 0, &newHotKey);
-    if (status != noErr) return NO;
-    if (_hotKey) UnregisterEventHotKey(_hotKey);
-    _hotKey = newHotKey;
-    return YES;
+    return ReplaceHotKey(_hotKey, [&](EventHotKeyRef *replacement) {
+        return RegisterEventHotKey(keyCode, modifiers, identifier,
+                                   GetApplicationEventTarget(), 0, replacement);
+    }, [](EventHotKeyRef previous) { UnregisterEventHotKey(previous); });
 }
 
 - (void)menuWillOpen:(NSMenu *)menu {
@@ -1041,11 +1048,12 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     NSString *count = [NSString stringWithFormat:@"%llu clicks", static_cast<unsigned long long>(_engine.clickCount())];
     NSString *runMode = _limitMode == 1 ? [NSString stringWithFormat:@" · %llu max", static_cast<unsigned long long>(_clickLimit)] :
         (_limitMode == 2 ? [NSString stringWithFormat:@" · %.0fs max", _durationSeconds] : @"");
-    _statusMenuItem.title = arming ? [NSString stringWithFormat:@"◐ Starting · %.0fs delay · %@", _startDelaySeconds, ShortcutDisplay(_hotKeyCode, _hotKeyModifiers)] :
+    NSString *shortcut = _hotKey ? ShortcutDisplay(_hotKeyCode, _hotKeyModifiers) : @"No shortcut — open Preferences";
+    _statusMenuItem.title = arming ? [NSString stringWithFormat:@"◐ Starting · %.0fs delay · %@", _startDelaySeconds, shortcut] :
         (running ? [NSString stringWithFormat:@"● Clicking · %@ · %@%@", speed, count, runMode] :
                    [NSString stringWithFormat:@"○ Idle · %@ · %@%@", speed, count, runMode]);
     _toggleMenuItem.title = [NSString stringWithFormat:@"%@ Clicking (%@)",
-        arming ? @"Cancel" : (running ? @"Stop" : @"Start"), ShortcutDisplay(_hotKeyCode, _hotKeyModifiers)];
+        arming ? @"Cancel" : (running ? @"Stop" : @"Start"), shortcut];
     _speedMenuItem.title = [NSString stringWithFormat:@"Speed: %@", speed];
 
     for (NSMenuItem *item in _speedMenu.itemArray) {
@@ -1072,7 +1080,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     _statusItem.button.title = image ? @"" : (running ? @"●" : @"TC");
 
     if (_recorderButton && !_recorderButton.recording) {
-        _recorderButton.title = ShortcutDisplay(_hotKeyCode, _hotKeyModifiers);
+        _recorderButton.title = _hotKey ? ShortcutDisplay(_hotKeyCode, _hotKeyModifiers) : @"Unavailable — choose a shortcut";
     }
     if (_permissionLabel) {
         _permissionLabel.stringValue = CGPreflightPostEventAccess() ?
@@ -1128,7 +1136,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     _speedField.doubleValue = _cps;
     _speedStepper.doubleValue = _cps;
     [_mousePopup selectItemAtIndex:_mouseButton];
-    _recorderButton.title = ShortcutDisplay(_hotKeyCode, _hotKeyModifiers);
+    _recorderButton.title = _hotKey ? ShortcutDisplay(_hotKeyCode, _hotKeyModifiers) : @"Unavailable — choose a shortcut";
     [self refreshPreferencesControls];
     [self updateUI];
     [NSApp activateIgnoringOtherApps:YES];
@@ -1340,7 +1348,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
 }
 
 - (void)recorderDidCaptureKeyCode:(UInt32)keyCode modifiers:(UInt32)modifiers {
-    if (keyCode == _hotKeyCode && modifiers == _hotKeyModifiers) {
+    if (_hotKey && keyCode == _hotKeyCode && modifiers == _hotKeyModifiers) {
         [_recorderButton finishRecording];
         [self updateUI];
         return;
@@ -1348,7 +1356,8 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
 
     if (![self registerHotKeyCode:keyCode modifiers:modifiers]) {
         NSBeep();
-        _recorderButton.title = @"Shortcut unavailable — try another";
+        _recorderButton.title = @"Unavailable — try another or press Escape";
+        _recorderButton.toolTip = @"macOS could not register this shortcut. It may be in use; try another. Your previous shortcut remains active if available.";
         return;
     }
 
@@ -1358,12 +1367,14 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     [defaults setInteger:_hotKeyCode forKey:kHotKeyCodePreference];
     [defaults setInteger:_hotKeyModifiers forKey:kHotKeyModifiersPreference];
     [_recorderButton finishRecording];
+    _recorderButton.toolTip = nil;
     [_preferencesWindow makeFirstResponder:_speedField];
     [self updateUI];
 }
 
 - (void)recorderDidCancel {
     [_recorderButton finishRecording];
+    _recorderButton.toolTip = nil;
     [_preferencesWindow makeFirstResponder:_speedField];
     [self updateUI];
 }
@@ -1453,6 +1464,11 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
         _hotKeyModifiers = kDefaultModifiers;
         [defaults setInteger:_hotKeyCode forKey:kHotKeyCodePreference];
         [defaults setInteger:_hotKeyModifiers forKey:kHotKeyModifiersPreference];
+    } else {
+        NSAlert *failure = [[NSAlert alloc] init];
+        failure.messageText = @"Default shortcut unavailable";
+        failure.informativeText = @"macOS could not register the default shortcut. It may be in use. Your previous shortcut remains active if available; choose another in Preferences.";
+        [failure runModal];
     }
     [self refreshPreferencesControls];
     [self updateUI];
@@ -1523,6 +1539,17 @@ int RunSelfTests() {
             AgentOptions options;
             std::string error;
             if (ParseAgentOptions(static_cast<int>(std::size(arguments)), arguments, &options, true, &error)) return 12;
+        }
+        {
+            auto oldKey = reinterpret_cast<EventHotKeyRef>(static_cast<uintptr_t>(1));
+            auto newKey = reinterpret_cast<EventHotKeyRef>(static_cast<uintptr_t>(2));
+            EventHotKeyRef current = oldKey;
+            bool removed = false;
+            if (ReplaceHotKey(current, [](EventHotKeyRef *) -> OSStatus { return eventHotKeyExistsErr; },
+                              [&](EventHotKeyRef) { removed = true; }) || current != oldKey || removed) return 13;
+            if (!ReplaceHotKey(current, [&](EventHotKeyRef *out) { *out = newKey; return noErr; },
+                               [&](EventHotKeyRef key) { removed = key == oldKey; }) ||
+                current != newKey || !removed) return 14;
         }
         NSLog(@"SymClick self-test passed");
     }

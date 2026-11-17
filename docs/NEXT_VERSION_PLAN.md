@@ -35,7 +35,7 @@ plane.
 
 - Optional 0–10 second start delay: the app visibly arms, then begins clicking; the
   same shortcut cancels the countdown.
-- Reset Defaults restores the shortcut and every click setting after confirmation.
+- Reset Defaults restores click settings and attempts to restore the default shortcut after confirmation; if macOS rejects it, the previous working shortcut is retained and the user is notified.
 - `--diagnose` reports the bundle version, host architecture, and Accessibility state.
 - `--smoke-test` boots the real AppKit delegate/menu-bar lifecycle and exits cleanly;
   `make diagnostics` and `make smoke` make these release gates repeatable.

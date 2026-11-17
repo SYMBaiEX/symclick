@@ -15,6 +15,8 @@ All notable changes to SymClick are documented here. This project follows
 
 ### Improved
 
+- Shortcut registration failures now offer a retry, preserve a working shortcut, and report unavailable defaults.
+
 - `make verify` now checks both universal architectures with the current `lipo`
   command syntax and exercises the agent contract.
 - Headless smoke checks report an explicit skip when no interactive display session
