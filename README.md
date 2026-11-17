@@ -113,7 +113,10 @@ make clean
 
 For visual inspection without changing saved settings or registering a global
 shortcut, run `build/SymClick.app/Contents/MacOS/SymClick --preferences-preview`.
-Close the preview window to exit.
+This is a non-persistent preview: controls may change visually, but have no
+effect and do not save. Close the preview window to exit. The bundled mascot is
+a transparent raster illustration in a vector style; page patterns and panels
+are drawn natively.
 
 The release design and deferred roadmap are documented in
 [`docs/NEXT_VERSION_PLAN.md`](docs/NEXT_VERSION_PLAN.md).

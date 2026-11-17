@@ -3,13 +3,13 @@
 All notable changes to SymClick are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.3.1] - 2026-11-17
 
 ### Improved
 
 - Preferences now use a full-page, early-web-inspired rainbow layout with a
   bundled mascot, tiled stars, colorful framed control groups, and scrolling.
-- Added a read-only `--preferences-preview` mode for inspecting the real
+- Added a non-persistent `--preferences-preview` mode for inspecting the real
   Preferences UI without registering a hotkey or changing saved settings.
 
 ## [1.3.0] - 2026-11-17
@@ -78,7 +78,7 @@ All notable changes to SymClick are documented here. This project follows
 - Accessibility permission guidance and fail-safe stop behavior.
 
 [1.3.0]: https://github.com/SYMBaiEX/symclick/compare/v1.2.0...v1.3.0
+[1.3.1]: https://github.com/SYMBaiEX/symclick/compare/v1.3.0...v1.3.1
 [1.2.0]: https://github.com/SYMBaiEX/symclick/releases/tag/v1.2.0
 [1.1.0]: https://github.com/SYMBaiEX/symclick/releases/tag/v1.1.0
 [1.0.0]: https://github.com/SYMBaiEX/symclick/releases/tag/v1.0.0
-[Unreleased]: https://github.com/SYMBaiEX/symclick/compare/v1.3.0...HEAD

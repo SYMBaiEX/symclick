@@ -1413,7 +1413,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
                   styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
                     backing:NSBackingStoreBuffered
                       defer:NO];
-    _preferencesWindow.title = gPreferencesPreview ? @"SymClick Preferences — Read-only Preview" : @"SymClick Preferences";
+    _preferencesWindow.title = gPreferencesPreview ? @"SymClick Preferences — Non-persistent Preview" : @"SymClick Preferences";
     _preferencesWindow.releasedWhenClosed = NO;
     _preferencesWindow.delegate = self;
 
@@ -1634,7 +1634,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     permissionStack.spacing = 6;
     RetroPanel *permissionPanel = RetroWrap(permissionStack, [NSColor colorWithCalibratedRed:1 green:0.91 blue:0.38 alpha:1]);
     RetroPanel *buttonPanel = RetroWrap(buttonRow, [NSColor colorWithCalibratedRed:0.83 green:0.71 blue:1 alpha:1]);
-    NSTextField *badges = RetroHeading(@"✦  100% HAND CODED  ✦    ♥  CLICK HAPPY  ♥    ✦  OPEN SOURCE  ✦");
+    NSTextField *badges = RetroHeading(@"✦  NATIVE & OPEN SOURCE  ✦    ♥  CLICK HAPPY  ♥");
     badges.alignment = NSTextAlignmentCenter;
     RetroPanel *badgePanel = RetroWrap(badges, [NSColor colorWithCalibratedRed:1 green:0.91 blue:0.48 alpha:1]);
 
@@ -1679,8 +1679,8 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
         [speedHint.widthAnchor constraintLessThanOrEqualToAnchor:limitsStack.widthAnchor],
     ]];
     if (gPreferencesPreview) {
-        // In preview mode controls remain visually representative but cannot change defaults,
-        // register a shortcut, open System Settings or start the click engine.
+        // Preview controls can change their displayed selection, but have no actions and
+        // cannot change defaults, register a shortcut, open Settings or start clicks.
         NSArray<NSControl *> *controls = @[_recorderButton, _speedField, _speedStepper, _mousePopup,
             _patternPopup, _locationPopup, _captureButton, _limitPopup, _limitField, _limitStepper,
             _jitterStepper, _startDelayStepper, _effectCheckbox, settingsButton, resetButton, doneButton];
