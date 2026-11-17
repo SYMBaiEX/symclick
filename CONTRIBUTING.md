@@ -42,6 +42,9 @@ shared desktop without an explicit user-confirmed target and finite bound.
 with Xcode Command Line Tools. It never invokes a confirmed run; a separate
 interactive fixture is needed to test click delivery or permission-denied execution.
 
+Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the AppKit, hotkey,
+engine, and agent-process flows. Update it alongside changes to those flows.
+
 ## Pull requests
 
 - Keep each pull request focused and explain the user-visible behavior.
