@@ -35,15 +35,19 @@ plane.
 
 - Optional 0–10 second start delay: the app visibly arms, then begins clicking; the
   same shortcut cancels the countdown.
-- Reset Defaults restores click settings and attempts to restore the default shortcut after confirmation; if macOS rejects it, the previous working shortcut is retained and the user is notified.
-- Preferences offer an optional static, coalesced CLICK! indicator for menu-bar runs.
+- Reset Defaults restores the shortcut and click settings after confirmation.
 - `--diagnose` reports the bundle version, host architecture, and Accessibility state.
-- `--performance-report` adds normalized configuration bounds and timing mode without measuring throughput or exposing coordinates.
 - `--smoke-test` boots the real AppKit delegate/menu-bar lifecycle and exits cleanly;
   `make diagnostics` and `make smoke` make these release gates repeatable.
 
-## v1.3 next pass
+## v1.3 implementation
 
+- A native comic-inspired Preferences banner and an optional, off-by-default,
+  coalesced `CLICK!` indicator add personality to menu-bar runs.
+- Shortcut registration failures offer a retry; Reset Defaults retains a previous
+  working shortcut and notifies the user if macOS rejects the default.
+- `--performance-report` provides normalized settings and timing mode without
+  measuring throughput or exposing coordinates.
 - `--agent-help` publishes a versioned `symclick-agent/v1` contract.
 - `--agent-status` reports version, architecture, Accessibility state, and local
   capabilities without generating input.
@@ -93,9 +97,8 @@ stop the run from the menu-bar app. Agent execution remains disabled.
 
 ## Hard wins intentionally deferred
 
-- Notarization is complete for v1.1.0: Apple accepted the archive, the ticket was
-  stapled, and `spctl` reports `source=Notarized Developer ID`. Future releases must
-  keep the same credentialed submit, staple, and validate gate.
+- Every distribution release needs Apple acceptance, a stapled ticket, and
+  `spctl` verification; a valid signature alone does not establish notarization.
 - A Login Item should be opt-in and requires a separate lifecycle/permissions review.
 - Per-app targets, profiles, overlays, analytics, and scripted sequences add state and
   permission complexity; they belong behind a measured user need.
@@ -113,8 +116,8 @@ shows whether it is idle, arming, or clicking, makes every limit visible, and ke
 global stop shortcut easy to reach. The engine is native and dependency-free, while
 the local agent contract lets an AI inspect and validate a bounded plan without a
 cloud account or hidden service. Agent execution remains disabled until it shares
-visible stop controls. Published releases are signed, notarized, stapled,
-and checksum-verifiable. Those are user value; accounts, telemetry, stealth injection,
+visible stop controls. The distribution process requires signed, notarized, stapled,
+and checksum-verifiable releases. Those are user value; accounts, telemetry, stealth injection,
 and elaborate scripting are not.
 
 ## Release gates
