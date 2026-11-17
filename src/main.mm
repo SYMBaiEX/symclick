@@ -1601,6 +1601,7 @@ int RunAgentHelp() {
         "  \"version\": \"%s\",\n"
         "  \"commands\": {\n"
         "    \"status\": \"SymClick --agent-status\",\n"
+        "    \"inspect\": \"SymClick --agent-inspect (read-only)\",\n"
         "    \"validate\": \"SymClick --agent-validate --x <px> --y <px> --clicks <n> --cps <n>\",\n"
         "    \"run\": \"SymClick --agent-run --confirm --x <px> --y <px> --clicks <n> --cps <n>\"\n"
         "  },\n"
@@ -1625,9 +1626,58 @@ int RunAgentStatus() {
         uname(&systemInfo);
         std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"status\","
                     "\"version\":\"%s\",\"machine\":\"%s\",\"accessibility\":\"%s\","
-                    "\"local_only\":true,\"capabilities\":[\"validate\",\"run\"]}\n",
+                    "\"local_only\":true,\"capabilities\":[\"inspect\",\"validate\",\"run\"]}\n",
                     AgentBundleVersion(), systemInfo.machine,
                     CGPreflightPostEventAccess() ? "granted" : "not-granted");
+    }
+    return 0;
+}
+
+int RunAgentInspect(int argc) {
+    @autoreleasepool {
+        if (argc != 2) {
+            PrintAgentError("--agent-inspect takes no arguments", 2);
+            return 2;
+        }
+        uint32_t count = 0;
+        if (CGGetActiveDisplayList(0, nullptr, &count) != kCGErrorSuccess || count == 0) {
+            std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"error\",\"code\":\"display_unavailable\"}\n");
+            return 3;
+        }
+        std::vector<CGDirectDisplayID> displays(count);
+        if (CGGetActiveDisplayList(count, displays.data(), &count) != kCGErrorSuccess) {
+            std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"error\",\"code\":\"display_unavailable\"}\n");
+            return 3;
+        }
+        CGEventRef event = CGEventCreate(nullptr);
+        if (!event) {
+            std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"error\",\"code\":\"pointer_unavailable\"}\n");
+            return 3;
+        }
+        CGPoint point = CGEventGetLocation(event);
+        CFRelease(event);
+        NSMutableArray *items = [NSMutableArray array];
+        for (uint32_t i = 0; i < count; ++i) {
+            CGDirectDisplayID display = displays[i];
+            CGRect bounds = CGDisplayBounds(display);
+            id scale = NSNull.null;
+            for (NSScreen *screen in NSScreen.screens) {
+                NSNumber *number = screen.deviceDescription[@"NSScreenNumber"];
+                if (number.unsignedIntValue == display) {
+                    scale = @(screen.backingScaleFactor);
+                    break;
+                }
+            }
+            [items addObject:@{@"id": @(display), @"bounds": @{@"x": @(bounds.origin.x),
+                @"y": @(bounds.origin.y), @"width": @(bounds.size.width), @"height": @(bounds.size.height)},
+                @"scale": scale}];
+        }
+        NSDictionary *snapshot = @{@"protocol": @"symclick-agent/v1", @"event": @"inspection",
+            @"read_only": @YES, @"coordinate_space": @"core_graphics_global_points",
+            @"pointer": @{@"x": @(point.x), @"y": @(point.y)}, @"displays": items};
+        NSData *json = [NSJSONSerialization dataWithJSONObject:snapshot options:0 error:nil];
+        if (!json) return 3;
+        std::printf("%s\n", [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding].UTF8String);
     }
     return 0;
 }
@@ -1688,6 +1738,7 @@ int main(int argc, const char *argv[]) {
     if (argc > 1 && std::string(argv[1]) == "--smoke-test") return RunSmokeTest();
     if (argc > 1 && std::string(argv[1]) == "--agent-help") return RunAgentHelp();
     if (argc > 1 && std::string(argv[1]) == "--agent-status") return RunAgentStatus();
+    if (argc > 1 && std::string(argv[1]) == "--agent-inspect") return RunAgentInspect(argc);
     if (argc > 1 && std::string(argv[1]) == "--agent-validate") return RunAgentCommand(argc, argv, false);
     if (argc > 1 && std::string(argv[1]) == "--agent-run") return RunAgentCommand(argc, argv, true);
     @autoreleasepool {
