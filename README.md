@@ -115,8 +115,8 @@ The release design and deferred roadmap are documented in
 
 AI agents and automation clients should start with
 [`docs/AGENT_INTEGRATION.md`](docs/AGENT_INTEGRATION.md). The protocol is
-local-only, fixed-target, finite, explicitly confirmed, and JSONL-based so an
-agent can validate a plan before any click is generated.
+local-only and JSONL-based so an agent can inspect and validate a finite
+fixed-target plan. Agent execution is disabled pending shared stop controls.
 
 The complete app is implemented in [`src/main.mm`](src/main.mm). The release build
 uses `-O3`, link-time optimization, and produces one `.app` bundle. Local builds are

@@ -25,8 +25,8 @@ flowchart TD
     Q[App termination] --> S
     CLI[Agent CLI invocation] --> X[Validate arguments]
     X -->|validation only| J[JSONL events on stdout]
-    X -->|run: confirm and preflight| W2[Separate process-local engine]
-    W2 --> J
+    X -->|run requested| R[Return run_unavailable; no clicks]
+    R --> J
 ```
 
 ## Menu-bar lifecycle
@@ -59,20 +59,11 @@ the reported count tracks logical clicks, not individual mouse events.
 
 ## Agent process boundary
 
-[`main`](../src/main.mm#L1685) dispatches agent arguments before starting AppKit.
-[`RunAgentCommand`](../src/main.mm#L1635) validates arguments and confirmation; the
-validation path emits a plan without clicking. A real run checks Accessibility,
-creates a **separate process-local** `ClickEngine`, applies fixed coordinates and
-a finite bound, and writes JSONL events. See
-[`AGENT_INTEGRATION.md`](AGENT_INTEGRATION.md) for the contract.
-
-The menu-bar shortcut and menu status control and observe only the menu-bar
-process's engine; they do **not** currently stop or show an independent CLI run.
-CLI interruption also does not yet produce a dedicated cancelled event. Do not
-assume that a `completed` event proves the target received the clicks: Core
-Graphics delivery and target behavior can differ, and the current agent path
-does not distinguish event-source creation failure from a completed run. These
-limitations need consideration when changing or using the integration.
+`main` dispatches agent arguments before starting AppKit. `RunAgentCommand`
+validates arguments and the dry-run path emits a plan without clicking. Agent
+execution fails closed with `run_unavailable`: the menu-bar shortcut and status
+cannot yet stop or observe a separate CLI engine. Inspection and validation are
+available; see [`AGENT_INTEGRATION.md`](AGENT_INTEGRATION.md) for the contract.
 
 ## Maintaining this document
 

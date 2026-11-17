@@ -111,8 +111,9 @@ Competing autoclickers often trade safety for a giant speed number or hide state
 window that disappears behind the game. SymClick keeps the controls in the menu bar,
 shows whether it is idle, arming, or clicking, makes every limit visible, and keeps a
 global stop shortcut easy to reach. The engine is native and dependency-free, while
-the local agent contract lets an AI inspect, validate, and confirm a bounded run
-without a cloud account or hidden service. The release is signed, notarized, stapled,
+the local agent contract lets an AI inspect and validate a bounded plan without a
+cloud account or hidden service. Agent execution remains disabled until it shares
+visible stop controls. Published releases are signed, notarized, stapled,
 and checksum-verifiable. Those are user value; accounts, telemetry, stealth injection,
 and elaborate scripting are not.
 
