@@ -12,6 +12,9 @@ HTTP endpoint, account, telemetry, or network dependency.
 - Agent runs always use an explicit fixed screen coordinate (`--x` and `--y`).
 - Agent runs require exactly one finite bound: `--clicks` or `--duration`.
 - The default agent start delay is one second so a user can cancel or move away.
+- Press Ctrl-C in the foreground terminal, or send SIGINT to the agent process,
+  to cancel. The menu-bar shortcut controls the menu-bar app only; it does not
+  stop a separate agent process.
 - Accessibility permission is checked before any event is generated.
 - Values are rejected outside the same bounded limits as the native UI.
 
@@ -39,16 +42,20 @@ Every output line is one JSON object. A successful validation looks like:
 {"protocol":"symclick-agent/v1","event":"validated","valid":true,"target":{"x":640,"y":420},"cps":100,"button":"left","pattern":"single","jitter":0,"start_delay_seconds":1,"bound":{"type":"clicks","value":25}}
 ```
 
-A real run emits `ready`, `started`, and `completed` events. The final event
-contains the logical click count and either `click-limit` or `duration-limit` as
-the reason. Errors use `event: "error"` and a stable `code`, including:
+A real run emits `ready`, `started`, and either `completed` or `cancelled`.
+The final event contains the logical click count. Completed runs report
+`click-limit` or `duration-limit`; an interrupted run reports `interrupt`.
+Errors use `event: "error"` and a stable `code`, including:
 
 - `invalid_request` — missing, malformed, or out-of-bounds arguments.
 - `accessibility_required` — macOS permission is not enabled for SymClick.
+- `signal_setup_failed` — the process could not install the interrupt handler.
+- `event_source_failed` — Core Graphics could not create an event source; no
+  successful completion is reported.
 
-Exit status is `0` for a completed command, `2` for invalid input, and `3` when
-Accessibility permission is required. A caller should not retry an invalid
-request without changing it.
+Exit status is `0` for a completed command, `2` for invalid input, `3` when
+Accessibility permission is required, `4` for setup failure, and `130` for an
+interrupted run. A caller should not retry an invalid request without changing it.
 
 ## Recommended AI-agent flow
 
