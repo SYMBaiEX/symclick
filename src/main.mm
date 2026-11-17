@@ -572,6 +572,60 @@ CGPoint CurrentPointerLocation() {
 
 @class AppDelegate;
 
+// Decorative artwork is drawn locally and does not participate in interaction.
+@interface SymClickBanner : NSView
+@end
+
+@implementation SymClickBanner
+- (BOOL)isAccessibilityElement { return NO; }
+- (void)drawRect:(NSRect)dirtyRect {
+    (void)dirtyRect;
+    NSRect bounds = self.bounds;
+    NSColor *ink = [NSColor colorWithCalibratedRed:0.12 green:0.08 blue:0.22 alpha:1];
+    NSColor *pink = [NSColor colorWithCalibratedRed:1.0 green:0.38 blue:0.66 alpha:1];
+    NSColor *cream = [NSColor colorWithCalibratedRed:1.0 green:0.94 blue:0.84 alpha:1];
+    [[NSColor colorWithCalibratedRed:0.85 green:0.77 blue:1.0 alpha:1] setFill];
+    [[NSBezierPath bezierPathWithRoundedRect:bounds xRadius:12 yRadius:12] fill];
+    // Offset dots and a hand-inked star give the panel a printed-comic texture.
+    [[pink colorWithAlphaComponent:0.45] setFill];
+    for (int x = 12; x < (int)bounds.size.width; x += 18)
+        for (int y = 10; y < (int)bounds.size.height; y += 18)
+            [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(x, y, 3, 3)] fill];
+    NSBezierPath *star = [NSBezierPath bezierPath];
+    [star moveToPoint:NSMakePoint(205, 20)];
+    [star lineToPoint:NSMakePoint(216, 39)]; [star lineToPoint:NSMakePoint(236, 44)];
+    [star lineToPoint:NSMakePoint(219, 54)]; [star lineToPoint:NSMakePoint(215, 76)];
+    [star lineToPoint:NSMakePoint(204, 58)]; [star lineToPoint:NSMakePoint(183, 54)];
+    [star lineToPoint:NSMakePoint(199, 42)]; [star closePath];
+    [cream setFill]; [star fill]; [ink setStroke]; star.lineWidth = 2; [star stroke];
+    // Original grown-up anime mascot: hair, face, eyes, fringe and bow.
+    NSBezierPath *hair = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(24, 4, 132, 118)];
+    [ink setFill]; [hair fill];
+    NSBezierPath *face = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(49, 20, 83, 87)];
+    [cream setFill]; [face fill]; [ink setStroke]; face.lineWidth = 3; [face stroke];
+    [ink setFill];
+    [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(66, 52, 9, 16)] fill];
+    [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(105, 52, 9, 16)] fill];
+    NSBezierPath *fringe = [NSBezierPath bezierPath];
+    [fringe moveToPoint:NSMakePoint(47, 75)]; [fringe curveToPoint:NSMakePoint(133, 79) controlPoint1:NSMakePoint(44, 131) controlPoint2:NSMakePoint(132, 132)];
+    [fringe lineToPoint:NSMakePoint(113, 95)]; [fringe lineToPoint:NSMakePoint(91, 76)];
+    [fringe lineToPoint:NSMakePoint(87, 96)]; [fringe lineToPoint:NSMakePoint(68, 77)]; [fringe closePath]; [fringe fill];
+    NSBezierPath *smile = [NSBezierPath bezierPath];
+    [smile moveToPoint:NSMakePoint(82, 39)]; [smile curveToPoint:NSMakePoint(101, 39) controlPoint1:NSMakePoint(86, 32) controlPoint2:NSMakePoint(97, 32)];
+    smile.lineWidth = 2; [ink setStroke]; [smile stroke];
+    NSBezierPath *bow = [NSBezierPath bezierPath];
+    [bow moveToPoint:NSMakePoint(128, 98)]; [bow lineToPoint:NSMakePoint(145, 113)];
+    [bow lineToPoint:NSMakePoint(145, 95)]; [bow lineToPoint:NSMakePoint(159, 89)];
+    [bow lineToPoint:NSMakePoint(145, 82)]; [bow lineToPoint:NSMakePoint(137, 89)]; [bow closePath];
+    [pink setFill]; [bow fill]; bow.lineWidth = 2; [ink setStroke]; [bow stroke];
+    NSDictionary *titleStyle = @{NSFontAttributeName:[NSFont boldSystemFontOfSize:29], NSForegroundColorAttributeName:ink};
+    NSDictionary *subStyle = @{NSFontAttributeName:[NSFont boldSystemFontOfSize:11], NSForegroundColorAttributeName:ink};
+    [@"SYMCLICK!" drawAtPoint:NSMakePoint(183, 78) withAttributes:titleStyle];
+    [@"YOUR CLICKING SIDEKICK ✦" drawAtPoint:NSMakePoint(240, 48) withAttributes:subStyle];
+    [@"SET IT UP. STAY IN CONTROL." drawAtPoint:NSMakePoint(240, 30) withAttributes:subStyle];
+}
+@end
+
 @interface HotKeyRecorderButton : NSButton
 @property(nonatomic, weak) AppDelegate *recorderDelegate;
 @property(nonatomic) BOOL recording;
@@ -1138,7 +1192,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
 
 - (void)buildPreferencesWindow {
     _preferencesWindow = [[NSWindow alloc]
-        initWithContentRect:NSMakeRect(0, 0, 560, 550)
+        initWithContentRect:NSMakeRect(0, 0, 560, 680)
                   styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
                     backing:NSBackingStoreBuffered
                       defer:NO];
@@ -1146,6 +1200,9 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     _preferencesWindow.releasedWhenClosed = NO;
     _preferencesWindow.delegate = self;
 
+    SymClickBanner *banner = [[SymClickBanner alloc] initWithFrame:NSZeroRect];
+    banner.translatesAutoresizingMaskIntoConstraints = NO;
+    [banner.heightAnchor constraintEqualToConstant:126].active = YES;
     NSTextField *intro = Label(@"Fast, native clicking with predictable limits and target control.");
     intro.font = [NSFont systemFontOfSize:13];
 
@@ -1315,7 +1372,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     buttonRow.distribution = NSStackViewDistributionFill;
 
     NSStackView *root = [NSStackView stackViewWithViews:@[
-        intro, grid, speedHint, permissionRow, buttonRow,
+        banner, intro, grid, speedHint, permissionRow, buttonRow,
     ]];
     root.translatesAutoresizingMaskIntoConstraints = NO;
     root.orientation = NSUserInterfaceLayoutOrientationVertical;
@@ -1328,6 +1385,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
         [root.trailingAnchor constraintEqualToAnchor:_preferencesWindow.contentView.trailingAnchor constant:-24],
         [root.topAnchor constraintEqualToAnchor:_preferencesWindow.contentView.topAnchor constant:22],
         [root.bottomAnchor constraintLessThanOrEqualToAnchor:_preferencesWindow.contentView.bottomAnchor constant:-22],
+        [banner.widthAnchor constraintEqualToAnchor:root.widthAnchor],
         [permissionRow.widthAnchor constraintEqualToAnchor:root.widthAnchor],
         [buttonRow.widthAnchor constraintEqualToAnchor:root.widthAnchor],
     ]];
