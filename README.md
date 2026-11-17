@@ -23,6 +23,7 @@ without making the app harder to stop or exposing a network control surface.
 - Optional 0–10 second start delay so you can move to the target safely
 - Live click count and run-limit status in the menu bar
 - Reset Defaults action and a diagnostics/smoke-test path for maintainers
+- Colorful early-web-inspired Preferences with a mascot and native controls
 - Local `--agent-status`, `--agent-inspect`, and `--agent-validate` commands;
   `--agent-run` fails closed pending shared stop controls
 - Changes to settings apply while the clicker is running
@@ -109,6 +110,10 @@ make verify
 make package
 make clean
 ```
+
+For visual inspection without changing saved settings or registering a global
+shortcut, run `build/SymClick.app/Contents/MacOS/SymClick --preferences-preview`.
+Close the preview window to exit.
 
 The release design and deferred roadmap are documented in
 [`docs/NEXT_VERSION_PLAN.md`](docs/NEXT_VERSION_PLAN.md).

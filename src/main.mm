@@ -578,6 +578,7 @@ CGPoint CurrentPointerLocation() {
 }  // namespace
 
 @class AppDelegate;
+static BOOL gPreferencesPreview = NO;
 
 // Register first so a failed replacement never releases the working shortcut.
 template <typename Register, typename Unregister>
@@ -590,6 +591,102 @@ bool ReplaceHotKey(EventHotKeyRef &current, Register registerNew, Unregister unr
 }
 
 // Decorative artwork is drawn locally and does not participate in interaction.
+@interface RetroPage : NSView
+@end
+
+@implementation RetroPage
+- (BOOL)isAccessibilityElement { return NO; }
+- (void)drawRect:(NSRect)dirtyRect {
+    (void)dirtyRect;
+    NSArray<NSColor *> *tiles = @[
+        [NSColor colorWithCalibratedRed:1.0 green:0.17 blue:0.58 alpha:1],
+        [NSColor colorWithCalibratedRed:0.44 green:0.18 blue:0.87 alpha:1],
+        [NSColor colorWithCalibratedRed:0.08 green:0.83 blue:0.96 alpha:1],
+        [NSColor colorWithCalibratedRed:0.70 green:0.96 blue:0.22 alpha:1],
+        [NSColor colorWithCalibratedRed:1.0 green:0.85 blue:0.15 alpha:1],
+        [NSColor colorWithCalibratedRed:1.0 green:0.38 blue:0.17 alpha:1],
+    ];
+    const CGFloat size = 32;
+    for (NSInteger y = 0; y < (NSInteger)(NSHeight(self.bounds) / size) + 1; ++y) {
+        for (NSInteger x = 0; x < (NSInteger)(NSWidth(self.bounds) / size) + 1; ++x) {
+            [tiles[(x + 2 * y) % tiles.count] setFill];
+            NSRectFill(NSMakeRect(x * size, y * size, size, size));
+            [[NSColor colorWithCalibratedWhite:1 alpha:0.38] setFill];
+            NSRectFill(NSMakeRect(x * size + 13, y * size + 5, 5, 21));
+            NSRectFill(NSMakeRect(x * size + 5, y * size + 13, 21, 5));
+        }
+    }
+}
+@end
+
+// Colored, hard-edged table-style panels keep the native controls readable.
+@interface RetroPanel : NSView
+@property(nonatomic, strong) NSColor *fillColor;
+@end
+
+@implementation RetroPanel
+- (BOOL)isAccessibilityElement { return NO; }
+- (void)drawRect:(NSRect)dirtyRect {
+    (void)dirtyRect;
+    NSRect bounds = self.bounds;
+    [[NSColor colorWithCalibratedRed:0.13 green:0.03 blue:0.25 alpha:1] setFill];
+    NSRectFill(bounds);
+    [[NSColor colorWithCalibratedRed:1 green:0.23 blue:0.68 alpha:1] setFill];
+    NSRectFill(NSInsetRect(bounds, 3, 3));
+    [[NSColor colorWithCalibratedRed:0.12 green:0.84 blue:0.95 alpha:1] setFill];
+    NSRectFill(NSInsetRect(bounds, 6, 6));
+    NSColor *fill = self.fillColor ? self.fillColor : NSColor.whiteColor;
+    [fill setFill];
+    NSRectFill(NSInsetRect(bounds, 9, 9));
+    NSArray<NSColor *> *rainbow = @[
+        [NSColor colorWithCalibratedRed:1 green:0.17 blue:0.4 alpha:1],
+        [NSColor colorWithCalibratedRed:1 green:0.63 blue:0.05 alpha:1],
+        [NSColor colorWithCalibratedRed:1 green:0.96 blue:0.1 alpha:1],
+        [NSColor colorWithCalibratedRed:0.45 green:0.95 blue:0.12 alpha:1],
+        [NSColor colorWithCalibratedRed:0.08 green:0.85 blue:1 alpha:1],
+        [NSColor colorWithCalibratedRed:0.60 green:0.31 blue:0.98 alpha:1],
+    ];
+    CGFloat width = (NSWidth(bounds) - 20) / rainbow.count;
+    for (NSUInteger i = 0; i < rainbow.count; ++i) {
+        [rainbow[i] setFill];
+        NSRectFill(NSMakeRect(10 + i * width, NSHeight(bounds) - 12, width + 1, 3));
+    }
+}
+@end
+
+static RetroPanel *RetroWrap(NSView *content, NSColor *color) {
+    RetroPanel *panel = [RetroPanel new];
+    panel.translatesAutoresizingMaskIntoConstraints = NO;
+    panel.fillColor = color;
+    content.translatesAutoresizingMaskIntoConstraints = NO;
+    [panel addSubview:content];
+    [NSLayoutConstraint activateConstraints:@[
+        [content.leadingAnchor constraintEqualToAnchor:panel.leadingAnchor constant:18],
+        [content.trailingAnchor constraintEqualToAnchor:panel.trailingAnchor constant:-18],
+        [content.topAnchor constraintEqualToAnchor:panel.topAnchor constant:15],
+        [content.bottomAnchor constraintEqualToAnchor:panel.bottomAnchor constant:-15],
+    ]];
+    return panel;
+}
+
+static NSTextField *RetroHeading(NSString *text) {
+    NSTextField *label = Label(text);
+    NSFont *comic = [NSFont fontWithName:@"ComicSansMS-Bold" size:15];
+    label.font = comic ? comic : [NSFont boldSystemFontOfSize:15];
+    label.textColor = [NSColor colorWithCalibratedRed:0.24 green:0.05 blue:0.38 alpha:1];
+    return label;
+}
+
+static NSGridView *RetroGrid(NSArray *rows) {
+    NSGridView *grid = [NSGridView gridViewWithViews:rows];
+    grid.translatesAutoresizingMaskIntoConstraints = NO;
+    grid.rowSpacing = 8;
+    grid.columnSpacing = 16;
+    grid.xPlacement = NSGridCellPlacementLeading;
+    grid.yPlacement = NSGridCellPlacementCenter;
+    return grid;
+}
+
 @interface SymClickBanner : NSView
 @end
 
@@ -601,13 +698,22 @@ bool ReplaceHotKey(EventHotKeyRef &current, Register registerNew, Unregister unr
     NSColor *ink = [NSColor colorWithCalibratedRed:0.12 green:0.08 blue:0.22 alpha:1];
     NSColor *pink = [NSColor colorWithCalibratedRed:1.0 green:0.38 blue:0.66 alpha:1];
     NSColor *cream = [NSColor colorWithCalibratedRed:1.0 green:0.94 blue:0.84 alpha:1];
-    [[NSColor colorWithCalibratedRed:0.85 green:0.77 blue:1.0 alpha:1] setFill];
-    [[NSBezierPath bezierPathWithRoundedRect:bounds xRadius:12 yRadius:12] fill];
-    // Offset dots and a hand-inked star give the panel a printed-comic texture.
-    [[pink colorWithAlphaComponent:0.45] setFill];
-    for (int x = 12; x < (int)bounds.size.width; x += 18)
-        for (int y = 10; y < (int)bounds.size.height; y += 18)
-            [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(x, y, 3, 3)] fill];
+    NSArray<NSColor *> *rainbow = @[
+        [NSColor colorWithCalibratedRed:1 green:0.18 blue:0.43 alpha:1],
+        [NSColor colorWithCalibratedRed:1 green:0.57 blue:0.13 alpha:1],
+        [NSColor colorWithCalibratedRed:1 green:0.89 blue:0.25 alpha:1],
+        [NSColor colorWithCalibratedRed:0.57 green:0.95 blue:0.31 alpha:1],
+        [NSColor colorWithCalibratedRed:0.15 green:0.87 blue:0.99 alpha:1],
+        [NSColor colorWithCalibratedRed:0.72 green:0.52 blue:1 alpha:1],
+    ];
+    CGFloat stripe = NSHeight(bounds) / rainbow.count;
+    for (NSUInteger i = 0; i < rainbow.count; ++i) {
+        [rainbow[i] setFill];
+        NSRectFill(NSMakeRect(0, i * stripe, NSWidth(bounds), stripe + 1));
+    }
+    [ink setStroke];
+    NSBezierPath *frame = [NSBezierPath bezierPathWithRect:NSInsetRect(bounds, 3, 3)];
+    frame.lineWidth = 6; [frame stroke];
     NSBezierPath *star = [NSBezierPath bezierPath];
     [star moveToPoint:NSMakePoint(205, 20)];
     [star lineToPoint:NSMakePoint(216, 39)]; [star lineToPoint:NSMakePoint(236, 44)];
@@ -615,7 +721,12 @@ bool ReplaceHotKey(EventHotKeyRef &current, Register registerNew, Unregister unr
     [star lineToPoint:NSMakePoint(204, 58)]; [star lineToPoint:NSMakePoint(183, 54)];
     [star lineToPoint:NSMakePoint(199, 42)]; [star closePath];
     [cream setFill]; [star fill]; [ink setStroke]; star.lineWidth = 2; [star stroke];
-    // Original grown-up anime mascot: hair, face, eyes, fringe and bow.
+    NSURL *mascotURL = [NSBundle.mainBundle URLForResource:@"symclick-mascot" withExtension:@"png"];
+    NSImage *mascot = mascotURL ? [[NSImage alloc] initWithContentsOfURL:mascotURL] : nil;
+    if (mascot) {
+        [mascot drawInRect:NSMakeRect(22, 6, 124, 115) fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:1.0 respectFlipped:YES hints:nil];
+    } else {
+    // Graceful vector fallback if a development bundle has no mascot asset.
     NSBezierPath *hair = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(24, 4, 132, 118)];
     [ink setFill]; [hair fill];
     NSBezierPath *face = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(49, 20, 83, 87)];
@@ -635,7 +746,9 @@ bool ReplaceHotKey(EventHotKeyRef &current, Register registerNew, Unregister unr
     [bow lineToPoint:NSMakePoint(145, 95)]; [bow lineToPoint:NSMakePoint(159, 89)];
     [bow lineToPoint:NSMakePoint(145, 82)]; [bow lineToPoint:NSMakePoint(137, 89)]; [bow closePath];
     [pink setFill]; [bow fill]; bow.lineWidth = 2; [ink setStroke]; [bow stroke];
-    NSDictionary *titleStyle = @{NSFontAttributeName:[NSFont boldSystemFontOfSize:29], NSForegroundColorAttributeName:ink};
+    }
+    NSFont *comic = [NSFont fontWithName:@"ComicSansMS-Bold" size:29];
+    NSDictionary *titleStyle = @{NSFontAttributeName:(comic ? comic : [NSFont boldSystemFontOfSize:29]), NSForegroundColorAttributeName:ink};
     NSDictionary *subStyle = @{NSFontAttributeName:[NSFont boldSystemFontOfSize:11], NSForegroundColorAttributeName:ink};
     [@"SYMCLICK!" drawAtPoint:NSMakePoint(183, 78) withAttributes:titleStyle];
     [@"YOUR CLICKING SIDEKICK ✦" drawAtPoint:NSMakePoint(240, 48) withAttributes:subStyle];
@@ -653,6 +766,7 @@ bool ReplaceHotKey(EventHotKeyRef &current, Register registerNew, Unregister unr
 @interface AppDelegate : NSObject <NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate, NSTextFieldDelegate>
 - (void)recorderDidCaptureKeyCode:(UInt32)keyCode modifiers:(UInt32)modifiers;
 - (void)recorderDidCancel;
+- (void)showPreferences:(id)sender;
 @end
 
 @implementation HotKeyRecorderButton
@@ -716,6 +830,7 @@ bool ReplaceHotKey(EventHotKeyRef &current, Register registerNew, Unregister unr
 
 @implementation AppDelegate {
     ClickEngine _engine;
+    BOOL _didInitialize;
     EventHotKeyRef _hotKey;
     EventHandlerRef _hotKeyHandler;
     UInt32 _hotKeyCode;
@@ -782,6 +897,8 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
 
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     (void)notification;
+    if (_didInitialize) return;
+    _didInitialize = YES;
     [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
 
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
@@ -830,18 +947,20 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     _engine.setJitterPixels(_jitterPixels);
     _engine.setStartDelaySeconds(_startDelaySeconds);
 
-    [self buildMenu];
-    [self installHotKeyHandler];
-    if (![self registerHotKeyCode:_hotKeyCode modifiers:_hotKeyModifiers]) {
-        _hotKeyCode = kDefaultKeyCode;
-        _hotKeyModifiers = kDefaultModifiers;
-        [self registerHotKeyCode:_hotKeyCode modifiers:_hotKeyModifiers];
+    if (!gPreferencesPreview) {
+        [self buildMenu];
+        [self installHotKeyHandler];
+        if (![self registerHotKeyCode:_hotKeyCode modifiers:_hotKeyModifiers]) {
+            _hotKeyCode = kDefaultKeyCode;
+            _hotKeyModifiers = kDefaultModifiers;
+            [self registerHotKeyCode:_hotKeyCode modifiers:_hotKeyModifiers];
+        }
+        _statusTimer = [NSTimer scheduledTimerWithTimeInterval:0.1
+                                                         target:self
+                                                       selector:@selector(pollEngine:)
+                                                       userInfo:nil
+                                                        repeats:YES];
     }
-    _statusTimer = [NSTimer scheduledTimerWithTimeInterval:0.1
-                                                     target:self
-                                                   selector:@selector(pollEngine:)
-                                                   userInfo:nil
-                                                    repeats:YES];
     [self updateUI];
 }
 
@@ -1211,12 +1330,14 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     _statusItem.button.title = image ? @"" : (running ? @"●" : @"TC");
 
     if (_recorderButton && !_recorderButton.recording) {
-        _recorderButton.title = _hotKey ? ShortcutDisplay(_hotKeyCode, _hotKeyModifiers) : @"Unavailable — choose a shortcut";
+        _recorderButton.title = (_hotKey || gPreferencesPreview) ? ShortcutDisplay(_hotKeyCode, _hotKeyModifiers) : @"Unavailable — choose a shortcut";
     }
     if (_permissionLabel) {
         _permissionLabel.stringValue = CGPreflightPostEventAccess() ?
             @"Accessibility permission granted" : @"Accessibility permission not granted";
-        _permissionLabel.textColor = CGPreflightPostEventAccess() ? NSColor.systemGreenColor : NSColor.systemOrangeColor;
+        _permissionLabel.textColor = CGPreflightPostEventAccess() ?
+            [NSColor colorWithCalibratedRed:0.05 green:0.30 blue:0.12 alpha:1] :
+            [NSColor colorWithCalibratedRed:0.52 green:0.12 blue:0.10 alpha:1];
     }
 }
 
@@ -1268,12 +1389,19 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     _speedField.doubleValue = _cps;
     _speedStepper.doubleValue = _cps;
     [_mousePopup selectItemAtIndex:_mouseButton];
-    _recorderButton.title = _hotKey ? ShortcutDisplay(_hotKeyCode, _hotKeyModifiers) : @"Unavailable — choose a shortcut";
+    _recorderButton.title = (_hotKey || gPreferencesPreview) ? ShortcutDisplay(_hotKeyCode, _hotKeyModifiers) : @"Unavailable — choose a shortcut";
     [self refreshPreferencesControls];
     [self updateUI];
     [NSApp activateIgnoringOtherApps:YES];
     [_preferencesWindow center];
     [_preferencesWindow makeKeyAndOrderFront:nil];
+    [_preferencesWindow.contentView layoutSubtreeIfNeeded];
+    NSScrollView *scroll = (NSScrollView *)_preferencesWindow.contentView.subviews.firstObject;
+    if ([scroll isKindOfClass:NSScrollView.class]) {
+        CGFloat top = std::max<CGFloat>(0, NSHeight(scroll.documentView.bounds) - NSHeight(scroll.contentView.bounds));
+        [scroll.contentView scrollToPoint:NSMakePoint(0, top)];
+        [scroll reflectScrolledClipView:scroll.contentView];
+    }
 }
 
 - (void)buildPreferencesWindow {
@@ -1285,7 +1413,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
                   styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
                     backing:NSBackingStoreBuffered
                       defer:NO];
-    _preferencesWindow.title = @"SymClick Preferences";
+    _preferencesWindow.title = gPreferencesPreview ? @"SymClick Preferences — Read-only Preview" : @"SymClick Preferences";
     _preferencesWindow.releasedWhenClosed = NO;
     _preferencesWindow.delegate = self;
 
@@ -1356,9 +1484,13 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     _fixedLocationLabel = Label(@"Fixed: (not captured)");
     _fixedLocationLabel.font = [NSFont monospacedDigitSystemFontOfSize:11 weight:NSFontWeightRegular];
     _fixedLocationLabel.textColor = NSColor.secondaryLabelColor;
-    NSStackView *locationControls = [NSStackView stackViewWithViews:@[_locationPopup, _captureButton, _fixedLocationLabel]];
-    locationControls.orientation = NSUserInterfaceLayoutOrientationHorizontal;
-    locationControls.spacing = 8;
+    NSStackView *locationDetail = [NSStackView stackViewWithViews:@[_captureButton, _fixedLocationLabel]];
+    locationDetail.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    locationDetail.spacing = 8;
+    NSStackView *locationControls = [NSStackView stackViewWithViews:@[_locationPopup, locationDetail]];
+    locationControls.orientation = NSUserInterfaceLayoutOrientationVertical;
+    locationControls.alignment = NSLayoutAttributeLeading;
+    locationControls.spacing = 5;
 
     NSTextField *runModeLabel = Label(@"Run mode:");
     _limitPopup = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
@@ -1424,26 +1556,27 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
 
     _effectCheckbox = [NSButton checkboxWithTitle:@"Show CLICK! effect" target:self action:@selector(effectChanged:)];
 
-    NSGridView *grid = [NSGridView gridViewWithViews:@[
+    NSGridView *speedGrid = RetroGrid(@[
         @[shortcutLabel, _recorderButton],
         @[speedLabel, speedControls],
+    ]);
+    NSGridView *targetGrid = RetroGrid(@[
         @[mouseLabel, _mousePopup],
         @[patternLabel, _patternPopup],
         @[locationLabel, locationControls],
+    ]);
+    NSGridView *limitsGrid = RetroGrid(@[
         @[runModeLabel, _limitPopup],
         @[limitLabel, limitControls],
         @[jitterLabel, jitterControls],
         @[startDelayLabel, startDelayControls],
-    ]];
-    grid.translatesAutoresizingMaskIntoConstraints = NO;
-    grid.rowSpacing = 12;
-    grid.columnSpacing = 16;
-    grid.xPlacement = NSGridCellPlacementLeading;
-    grid.yPlacement = NSGridCellPlacementCenter;
+    ]);
 
     NSTextField *speedHint = Label(@"1–5,000 CPS. Changes apply immediately. Start delay gives you time to move to the target; limits stop cleanly.");
     speedHint.font = [NSFont systemFontOfSize:11];
     speedHint.textColor = NSColor.secondaryLabelColor;
+    speedHint.maximumNumberOfLines = 2;
+    speedHint.lineBreakMode = NSLineBreakByWordWrapping;
 
     _permissionLabel = Label(@"");
     _permissionLabel.font = [NSFont systemFontOfSize:11 weight:NSFontWeightMedium];
@@ -1462,20 +1595,65 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     buttonRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
     buttonRow.distribution = NSStackViewDistributionFill;
 
+    NSColor *ink = [NSColor colorWithCalibratedRed:0.13 green:0.03 blue:0.25 alpha:1];
+    for (NSTextField *label in @[intro, shortcutLabel, speedLabel, mouseLabel, patternLabel, locationLabel,
+                                  runModeLabel, limitLabel, jitterLabel, startDelayLabel, speedHint,
+                                  _fixedLocationLabel, _limitUnitLabel, _jitterValueLabel, _startDelayValueLabel,
+                                  _permissionLabel]) {
+        label.textColor = ink;
+    }
+    NSStackView *speedStack = [NSStackView stackViewWithViews:@[
+        RetroHeading(@"★ CLICK CONTROL CENTER ★"), intro, speedGrid,
+    ]];
+    speedStack.orientation = NSUserInterfaceLayoutOrientationVertical;
+    speedStack.alignment = NSLayoutAttributeLeading;
+    speedStack.spacing = 9;
+    RetroPanel *speedPanel = RetroWrap(speedStack, [NSColor colorWithCalibratedRed:0.80 green:1 blue:0.36 alpha:1]);
+
+    NSStackView *targetStack = [NSStackView stackViewWithViews:@[
+        RetroHeading(@"♥ TARGET & STYLE ♥"), targetGrid, _effectCheckbox,
+    ]];
+    targetStack.orientation = NSUserInterfaceLayoutOrientationVertical;
+    targetStack.alignment = NSLayoutAttributeLeading;
+    targetStack.spacing = 9;
+    RetroPanel *targetPanel = RetroWrap(targetStack, [NSColor colorWithCalibratedRed:0.56 green:0.96 blue:1 alpha:1]);
+
+    NSStackView *limitsStack = [NSStackView stackViewWithViews:@[
+        RetroHeading(@"✿ PLAY IT SAFE! ✿"), limitsGrid, speedHint,
+    ]];
+    limitsStack.orientation = NSUserInterfaceLayoutOrientationVertical;
+    limitsStack.alignment = NSLayoutAttributeLeading;
+    limitsStack.spacing = 9;
+    RetroPanel *limitsPanel = RetroWrap(limitsStack, [NSColor colorWithCalibratedRed:1 green:0.75 blue:0.90 alpha:1]);
+
+    NSStackView *permissionStack = [NSStackView stackViewWithViews:@[
+        RetroHeading(@"✧ PERMISSIONS & POWER ✧"), permissionRow,
+    ]];
+    permissionStack.orientation = NSUserInterfaceLayoutOrientationVertical;
+    permissionStack.alignment = NSLayoutAttributeLeading;
+    permissionStack.spacing = 6;
+    RetroPanel *permissionPanel = RetroWrap(permissionStack, [NSColor colorWithCalibratedRed:1 green:0.91 blue:0.38 alpha:1]);
+    RetroPanel *buttonPanel = RetroWrap(buttonRow, [NSColor colorWithCalibratedRed:0.83 green:0.71 blue:1 alpha:1]);
+    NSTextField *badges = RetroHeading(@"✦  100% HAND CODED  ✦    ♥  CLICK HAPPY  ♥    ✦  OPEN SOURCE  ✦");
+    badges.alignment = NSTextAlignmentCenter;
+    RetroPanel *badgePanel = RetroWrap(badges, [NSColor colorWithCalibratedRed:1 green:0.91 blue:0.48 alpha:1]);
+
     NSStackView *root = [NSStackView stackViewWithViews:@[
-        banner, intro, grid, _effectCheckbox, speedHint, permissionRow, buttonRow,
+        banner, speedPanel, targetPanel, limitsPanel, permissionPanel, buttonPanel, badgePanel,
     ]];
     root.translatesAutoresizingMaskIntoConstraints = NO;
     root.orientation = NSUserInterfaceLayoutOrientationVertical;
     root.alignment = NSLayoutAttributeLeading;
-    root.spacing = 14;
+    root.spacing = 12;
     NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSZeroRect];
     scroll.translatesAutoresizingMaskIntoConstraints = NO;
     scroll.hasVerticalScroller = YES;
     scroll.autohidesScrollers = YES;
     scroll.drawsBackground = NO;
-    NSView *document = [NSView new];
+    RetroPage *document = [RetroPage new];
     document.translatesAutoresizingMaskIntoConstraints = NO;
+    // Light control appearance keeps labels, fields and popups readable on the pastel panels.
+    document.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
     [document addSubview:root];
     scroll.documentView = document;
     [_preferencesWindow.contentView addSubview:scroll];
@@ -1486,14 +1664,30 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
         [scroll.topAnchor constraintEqualToAnchor:_preferencesWindow.contentView.topAnchor],
         [scroll.bottomAnchor constraintEqualToAnchor:_preferencesWindow.contentView.bottomAnchor],
         [document.widthAnchor constraintEqualToAnchor:scroll.contentView.widthAnchor],
-        [root.leadingAnchor constraintEqualToAnchor:document.leadingAnchor constant:24],
-        [root.trailingAnchor constraintEqualToAnchor:document.trailingAnchor constant:-24],
-        [root.topAnchor constraintEqualToAnchor:document.topAnchor constant:22],
-        [root.bottomAnchor constraintEqualToAnchor:document.bottomAnchor constant:-22],
+        [root.leadingAnchor constraintEqualToAnchor:document.leadingAnchor constant:14],
+        [root.trailingAnchor constraintEqualToAnchor:document.trailingAnchor constant:-14],
+        [root.topAnchor constraintEqualToAnchor:document.topAnchor constant:14],
+        [root.bottomAnchor constraintEqualToAnchor:document.bottomAnchor constant:-14],
         [banner.widthAnchor constraintEqualToAnchor:root.widthAnchor],
-        [permissionRow.widthAnchor constraintEqualToAnchor:root.widthAnchor],
-        [buttonRow.widthAnchor constraintEqualToAnchor:root.widthAnchor],
+        [speedPanel.widthAnchor constraintEqualToAnchor:root.widthAnchor],
+        [targetPanel.widthAnchor constraintEqualToAnchor:root.widthAnchor],
+        [limitsPanel.widthAnchor constraintEqualToAnchor:root.widthAnchor],
+        [permissionPanel.widthAnchor constraintEqualToAnchor:root.widthAnchor],
+        [buttonPanel.widthAnchor constraintEqualToAnchor:root.widthAnchor],
+        [badgePanel.widthAnchor constraintEqualToAnchor:root.widthAnchor],
+        [permissionRow.widthAnchor constraintEqualToAnchor:permissionStack.widthAnchor],
+        [speedHint.widthAnchor constraintLessThanOrEqualToAnchor:limitsStack.widthAnchor],
     ]];
+    if (gPreferencesPreview) {
+        // In preview mode controls remain visually representative but cannot change defaults,
+        // register a shortcut, open System Settings or start the click engine.
+        NSArray<NSControl *> *controls = @[_recorderButton, _speedField, _speedStepper, _mousePopup,
+            _patternPopup, _locationPopup, _captureButton, _limitPopup, _limitField, _limitStepper,
+            _jitterStepper, _startDelayStepper, _effectCheckbox, settingsButton, resetButton, doneButton];
+        for (NSControl *control in controls) { control.target = nil; control.action = nil; }
+        _speedField.editable = NO;
+        _limitField.editable = NO;
+    }
     [self refreshPreferencesControls];
 }
 
@@ -1640,6 +1834,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
 
 - (void)windowWillClose:(NSNotification *)notification {
     if (notification.object == _preferencesWindow) [self recorderDidCancel];
+    if (gPreferencesPreview && notification.object == _preferencesWindow) [NSApp terminate:nil];
 }
 
 - (void)openAccessibilitySettings:(id)sender {
@@ -1936,11 +2131,26 @@ int RunAgentCommand(int argc, const char *argv[], bool execute) {
     return 0;
 }
 
+int RunPreferencesPreview() {
+    @autoreleasepool {
+        gPreferencesPreview = YES;
+        NSApplication *application = NSApplication.sharedApplication;
+        AppDelegate *delegate = [AppDelegate new];
+        application.delegate = delegate;
+        [application finishLaunching];
+        [delegate applicationDidFinishLaunching:[NSNotification notificationWithName:NSApplicationDidFinishLaunchingNotification object:application]];
+        [delegate showPreferences:nil];
+        [application run];
+    }
+    return 0;
+}
+
 int main(int argc, const char *argv[]) {
     if (argc > 1 && std::string(argv[1]) == "--self-test") return RunSelfTests();
     if (argc > 1 && std::string(argv[1]) == "--diagnose") return RunDiagnostics();
     if (argc > 1 && std::string(argv[1]) == "--performance-report") return RunPerformanceReport();
     if (argc > 1 && std::string(argv[1]) == "--smoke-test") return RunSmokeTest();
+    if (argc > 1 && std::string(argv[1]) == "--preferences-preview") return RunPreferencesPreview();
     if (argc > 1 && std::string(argv[1]) == "--agent-help") return RunAgentHelp();
     if (argc > 1 && std::string(argv[1]) == "--agent-status") return RunAgentStatus();
     if (argc > 1 && std::string(argv[1]) == "--agent-inspect") return RunAgentInspect(argc);

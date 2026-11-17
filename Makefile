@@ -23,9 +23,10 @@ endif
 
 all: $(BINARY)
 
-$(BINARY): src/main.mm Info.plist
+$(BINARY): src/main.mm Info.plist assets/symclick-mascot.png
 	mkdir -p $(CONTENTS_DIR)/MacOS $(CONTENTS_DIR)/Resources
 	cp Info.plist $(PLIST)
+	cp assets/symclick-mascot.png $(CONTENTS_DIR)/Resources/symclick-mascot.png
 	$(CXX) $(CXXFLAGS) src/main.mm -o $(BINARY) $(FRAMEWORKS)
 	codesign $(CODESIGN_FLAGS) $(APP_BUNDLE)
 
