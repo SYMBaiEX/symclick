@@ -7,16 +7,14 @@ All notable changes to SymClick are documented here. This project follows
 
 ### Added
 
-- Local `symclick-agent/v1` JSONL contract for status, dry-run validation, and
-  explicitly confirmed finite runs.
-- Agent runs require a fixed target, a click-count or duration bound, and a
-  preflight Accessibility check; no network listener or background service is added.
+- Local `symclick-agent/v1` JSONL contract for status and dry-run validation.
+  Agent execution is disabled pending shared visible stop controls.
 - Repository-level `AGENTS.md`, agent integration documentation, and an agent issue form.
 
 ### Improved
 
-- Agent runs handle Ctrl-C with a `cancelled` event and report event-source
-  creation failures instead of incorrectly claiming completion.
+- Agent execution fails closed until it can use the visible menu-bar emergency
+  stop; dry-run validation now reports normalized duration accurately.
 - `make verify` now checks both universal architectures with the current `lipo`
   command syntax and exercises the agent contract.
 - Headless smoke checks report an explicit skip when no interactive display session

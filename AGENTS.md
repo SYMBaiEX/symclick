@@ -51,9 +51,8 @@ build/SymClick.app/Contents/MacOS/SymClick --agent-validate \
   --x 100 --y 200 --clicks 3 --cps 100
 ```
 
-Never run `--agent-run` or click-injection tests against an uncontrolled
-desktop. A real run requires explicit `--confirm`, a fixed target, and either
-a click count or duration bound.
+Never run click-injection tests against an uncontrolled desktop. `--agent-run`
+is disabled until shared visible status and emergency stop are implemented.
 
 ## Safe implementation rules
 

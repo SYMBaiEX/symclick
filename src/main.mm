@@ -8,7 +8,6 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
-#include <csignal>
 #include <cmath>
 #include <cstdint>
 #include <cerrno>
@@ -85,12 +84,6 @@ double NormalizeStartDelay(double value) {
 
 constexpr double kDefaultAgentStartDelaySeconds = 1.0;
 constexpr double kMaximumAgentCoordinate = 100'000.0;
-
-volatile std::sig_atomic_t gAgentInterrupted = 0;
-
-extern "C" void HandleAgentInterrupt(int) {
-    gAgentInterrupted = 1;
-}
 
 struct AgentOptions {
     double cps = kDefaultCPS;
@@ -244,6 +237,7 @@ bool ParseAgentOptions(int argc, const char *argv[], AgentOptions *options,
     options->cps = NormalizeCPS(options->cps);
     options->jitter = NormalizeJitter(options->jitter);
     options->startDelay = NormalizeStartDelay(options->startDelay);
+    if (options->hasDuration) options->duration = NormalizeDuration(options->duration);
     return true;
 }
 
@@ -382,10 +376,6 @@ bool IsFunctionKey(UInt32 keyCode) {
 
 class ClickEngine {
 public:
-    enum class Result { None, Completed, SourceError };
-    using SourceFactory = CGEventSourceRef (*)(CGEventSourceStateID);
-    explicit ClickEngine(SourceFactory sourceFactory = CGEventSourceCreate)
-        : sourceFactory_(sourceFactory) {}
     ~ClickEngine() { stop(); }
 
     void setClicksPerSecond(double cps) { cps_.store(NormalizeCPS(cps)); }
@@ -404,14 +394,12 @@ public:
     bool isRunning() const { return running_.load(); }
     bool isArming() const { return arming_.load(); }
     uint64_t clickCount() const { return clickCount_.load(); }
-    Result result() const { return result_.load(); }
 
     void start() {
         bool expected = false;
         if (!running_.compare_exchange_strong(expected, true)) return;
         if (worker_.joinable()) worker_.join();
         clickCount_.store(0);
-        result_.store(Result::None);
         arming_.store(true);
         worker_ = std::thread([this] { run(); });
     }
@@ -486,9 +474,8 @@ private:
 
     void run() {
         pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
-        CGEventSourceRef source = sourceFactory_(kCGEventSourceStateCombinedSessionState);
+        CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStateCombinedSessionState);
         if (!source) {
-            result_.store(Result::SourceError);
             running_.store(false);
             arming_.store(false);
             return;
@@ -548,13 +535,10 @@ private:
         }
 
         CFRelease(source);
-        result_.store(Result::Completed);
         running_.store(false);
     }
 
     std::atomic<bool> running_{false};
-    SourceFactory sourceFactory_;
-    std::atomic<Result> result_{Result::None};
     std::atomic<double> cps_{kDefaultCPS};
     std::atomic<int> mouseButton_{0};
     std::atomic<int> locationMode_{0};
@@ -1542,29 +1526,10 @@ int RunSelfTests() {
             if (ParseAgentOptions(static_cast<int>(std::size(arguments)), arguments, &options, true, &error)) return 12;
         }
         {
-            struct sigaction action{};
-            struct sigaction previous{};
-            action.sa_handler = HandleAgentInterrupt;
-            sigemptyset(&action.sa_mask);
-            gAgentInterrupted = 0;
-            if (sigaction(SIGINT, &action, &previous) != 0) return 13;
-            raise(SIGINT);
-            const bool caught = gAgentInterrupted != 0;
-            sigaction(SIGINT, &previous, nullptr);
-            if (!caught) return 14;
-
-            ClickEngine engine;
-            engine.setStartDelaySeconds(10);
-            engine.start();
-            engine.stop();
-            if (engine.clickCount() != 0 || engine.isRunning()) return 15;
-        }
-        {
-            ClickEngine engine([](CGEventSourceStateID) -> CGEventSourceRef { return nullptr; });
-            engine.start();
-            while (engine.isRunning()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            engine.stop();
-            if (engine.result() != ClickEngine::Result::SourceError || engine.clickCount() != 0) return 16;
+            const char *arguments[] = {"SymClick", "--agent-validate", "--x", "0", "--y", "0", "--duration", "2.5"};
+            AgentOptions options;
+            std::string error;
+            if (!ParseAgentOptions(static_cast<int>(std::size(arguments)), arguments, &options, false, &error) || options.duration != 3) return 13;
         }
         NSLog(@"SymClick self-test passed");
     }
@@ -1643,8 +1608,7 @@ int RunAgentHelp() {
         "  \"version\": \"%s\",\n"
         "  \"commands\": {\n"
         "    \"status\": \"SymClick --agent-status\",\n"
-        "    \"validate\": \"SymClick --agent-validate --x <px> --y <px> --clicks <n> --cps <n>\",\n"
-        "    \"run\": \"SymClick --agent-run --confirm --x <px> --y <px> --clicks <n> --cps <n>\"\n"
+        "    \"validate\": \"SymClick --agent-validate --x <px> --y <px> --clicks <n> --cps <n>\"\n"
         "  },\n"
         "  \"safety\": {\n"
         "    \"requires_confirmation\": true,\n"
@@ -1655,7 +1619,7 @@ int RunAgentHelp() {
         "    \"max_clicks\": 10000000,\n"
         "    \"max_duration_seconds\": 86400\n"
         "  },\n"
-        "  \"events\": [\"ready\", \"started\", \"completed\", \"cancelled\", \"error\"]\n"
+        "  \"events\": [\"status\", \"validated\", \"error\"]\n"
         "}\n",
         AgentBundleVersion());
     return 0;
@@ -1667,7 +1631,7 @@ int RunAgentStatus() {
         uname(&systemInfo);
         std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"status\","
                     "\"version\":\"%s\",\"machine\":\"%s\",\"accessibility\":\"%s\","
-                    "\"local_only\":true,\"capabilities\":[\"validate\",\"run\"]}\n",
+                    "\"local_only\":true,\"capabilities\":[\"validate\"]}\n",
                     AgentBundleVersion(), systemInfo.machine,
                     CGPreflightPostEventAccess() ? "granted" : "not-granted");
     }
@@ -1686,64 +1650,9 @@ int RunAgentCommand(int argc, const char *argv[], bool execute) {
             PrintAgentConfig(options, "validated");
             return 0;
         }
-        if (!CGPreflightPostEventAccess()) {
-            std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"error\","
-                        "\"code\":\"accessibility_required\",\"message\":\"Enable SymClick in Privacy & Security > Accessibility\"}\n");
-            return 3;
-        }
-
-        struct sigaction interruptAction{};
-        struct sigaction previousAction{};
-        interruptAction.sa_handler = HandleAgentInterrupt;
-        sigemptyset(&interruptAction.sa_mask);
-        gAgentInterrupted = 0;
-        if (sigaction(SIGINT, &interruptAction, &previousAction) != 0) {
-            std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"error\","
-                        "\"code\":\"signal_setup_failed\",\"message\":\"Could not install interrupt handler\"}\n");
-            return 4;
-        }
-
-        ClickEngine engine;
-        engine.setClicksPerSecond(options.cps);
-        engine.setMouseButton(options.button);
-        engine.setLocationMode(1);
-        engine.setFixedLocation(CGPointMake(options.x, options.y));
-        engine.setClickPattern(options.pattern);
-        engine.setJitterPixels(options.jitter);
-        engine.setStartDelaySeconds(options.startDelay);
-        if (options.hasClicks) {
-            engine.setLimitMode(1);
-            engine.setClickLimit(options.clicks);
-        } else {
-            engine.setLimitMode(2);
-            engine.setDurationSeconds(options.duration);
-        }
-
-        PrintAgentConfig(options, "ready");
-        engine.start();
-        std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"started\"}\n");
-        std::fflush(stdout);
-        while (engine.isRunning() && !gAgentInterrupted) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-        engine.stop();
-        const bool interrupted = gAgentInterrupted != 0;
-        sigaction(SIGINT, &previousAction, nullptr);
-        if (engine.result() == ClickEngine::Result::SourceError) {
-            std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"error\","
-                        "\"code\":\"event_source_failed\",\"message\":\"Could not create a Core Graphics event source\"}\n");
-            return 4;
-        }
-        if (interrupted) {
-            std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"cancelled\","
-                        "\"clicks\":%llu,\"reason\":\"interrupt\"}\n",
-                        static_cast<unsigned long long>(engine.clickCount()));
-            return 130;
-        }
-        const char *reason = options.hasClicks ? "click-limit" : "duration-limit";
-        std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"completed\","
-                    "\"clicks\":%llu,\"reason\":\"%s\"}\n",
-                    static_cast<unsigned long long>(engine.clickCount()), reason);
+        std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"error\","
+                    "\"code\":\"run_unavailable\",\"message\":\"Agent execution is disabled until shared stop controls are available\"}\n");
+        return 4;
     }
     return 0;
 }
