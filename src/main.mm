@@ -1641,17 +1641,17 @@ int RunAgentInspect(int argc) {
         }
         uint32_t count = 0;
         if (CGGetActiveDisplayList(0, nullptr, &count) != kCGErrorSuccess || count == 0) {
-            std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"error\",\"code\":\"display_unavailable\"}\n");
+            std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"error\",\"code\":\"display_unavailable\",\"message\":\"No active display available\"}\n");
             return 3;
         }
         std::vector<CGDirectDisplayID> displays(count);
         if (CGGetActiveDisplayList(count, displays.data(), &count) != kCGErrorSuccess) {
-            std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"error\",\"code\":\"display_unavailable\"}\n");
+            std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"error\",\"code\":\"display_unavailable\",\"message\":\"Could not enumerate active displays\"}\n");
             return 3;
         }
         CGEventRef event = CGEventCreate(nullptr);
         if (!event) {
-            std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"error\",\"code\":\"pointer_unavailable\"}\n");
+            std::printf("{\"protocol\":\"symclick-agent/v1\",\"event\":\"error\",\"code\":\"pointer_unavailable\",\"message\":\"Could not read pointer location\"}\n");
             return 3;
         }
         CGPoint point = CGEventGetLocation(event);
