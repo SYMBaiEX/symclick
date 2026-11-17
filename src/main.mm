@@ -17,6 +17,7 @@
 #include <mach/mach_time.h>
 #include <limits>
 #include <pthread.h>
+#include <QuartzCore/QuartzCore.h>
 #include <random>
 #include <string>
 #include <thread>
@@ -52,6 +53,11 @@ NSString *const kDurationSecondsPreference = @"durationSeconds";
 NSString *const kClickPatternPreference = @"clickPattern";
 NSString *const kJitterPixelsPreference = @"jitterPixels";
 NSString *const kStartDelayPreference = @"startDelaySeconds";
+NSString *const kClickEffectPreference = @"clickEffectEnabled";
+
+bool ShouldShowClickEffect(bool enabled, uint64_t count, uint64_t previousCount) {
+    return enabled && count > 0 && count != previousCount;
+}
 
 double NormalizeCPS(double value) {
     if (!std::isfinite(value)) {
@@ -582,6 +588,60 @@ bool ReplaceHotKey(EventHotKeyRef &current, Register registerNew, Unregister unr
     return true;
 }
 
+// Decorative artwork is drawn locally and does not participate in interaction.
+@interface SymClickBanner : NSView
+@end
+
+@implementation SymClickBanner
+- (BOOL)isAccessibilityElement { return NO; }
+- (void)drawRect:(NSRect)dirtyRect {
+    (void)dirtyRect;
+    NSRect bounds = self.bounds;
+    NSColor *ink = [NSColor colorWithCalibratedRed:0.12 green:0.08 blue:0.22 alpha:1];
+    NSColor *pink = [NSColor colorWithCalibratedRed:1.0 green:0.38 blue:0.66 alpha:1];
+    NSColor *cream = [NSColor colorWithCalibratedRed:1.0 green:0.94 blue:0.84 alpha:1];
+    [[NSColor colorWithCalibratedRed:0.85 green:0.77 blue:1.0 alpha:1] setFill];
+    [[NSBezierPath bezierPathWithRoundedRect:bounds xRadius:12 yRadius:12] fill];
+    // Offset dots and a hand-inked star give the panel a printed-comic texture.
+    [[pink colorWithAlphaComponent:0.45] setFill];
+    for (int x = 12; x < (int)bounds.size.width; x += 18)
+        for (int y = 10; y < (int)bounds.size.height; y += 18)
+            [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(x, y, 3, 3)] fill];
+    NSBezierPath *star = [NSBezierPath bezierPath];
+    [star moveToPoint:NSMakePoint(205, 20)];
+    [star lineToPoint:NSMakePoint(216, 39)]; [star lineToPoint:NSMakePoint(236, 44)];
+    [star lineToPoint:NSMakePoint(219, 54)]; [star lineToPoint:NSMakePoint(215, 76)];
+    [star lineToPoint:NSMakePoint(204, 58)]; [star lineToPoint:NSMakePoint(183, 54)];
+    [star lineToPoint:NSMakePoint(199, 42)]; [star closePath];
+    [cream setFill]; [star fill]; [ink setStroke]; star.lineWidth = 2; [star stroke];
+    // Original grown-up anime mascot: hair, face, eyes, fringe and bow.
+    NSBezierPath *hair = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(24, 4, 132, 118)];
+    [ink setFill]; [hair fill];
+    NSBezierPath *face = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(49, 20, 83, 87)];
+    [cream setFill]; [face fill]; [ink setStroke]; face.lineWidth = 3; [face stroke];
+    [ink setFill];
+    [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(66, 52, 9, 16)] fill];
+    [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(105, 52, 9, 16)] fill];
+    NSBezierPath *fringe = [NSBezierPath bezierPath];
+    [fringe moveToPoint:NSMakePoint(47, 75)]; [fringe curveToPoint:NSMakePoint(133, 79) controlPoint1:NSMakePoint(44, 131) controlPoint2:NSMakePoint(132, 132)];
+    [fringe lineToPoint:NSMakePoint(113, 95)]; [fringe lineToPoint:NSMakePoint(91, 76)];
+    [fringe lineToPoint:NSMakePoint(87, 96)]; [fringe lineToPoint:NSMakePoint(68, 77)]; [fringe closePath]; [fringe fill];
+    NSBezierPath *smile = [NSBezierPath bezierPath];
+    [smile moveToPoint:NSMakePoint(82, 39)]; [smile curveToPoint:NSMakePoint(101, 39) controlPoint1:NSMakePoint(86, 32) controlPoint2:NSMakePoint(97, 32)];
+    smile.lineWidth = 2; [ink setStroke]; [smile stroke];
+    NSBezierPath *bow = [NSBezierPath bezierPath];
+    [bow moveToPoint:NSMakePoint(128, 98)]; [bow lineToPoint:NSMakePoint(145, 113)];
+    [bow lineToPoint:NSMakePoint(145, 95)]; [bow lineToPoint:NSMakePoint(159, 89)];
+    [bow lineToPoint:NSMakePoint(145, 82)]; [bow lineToPoint:NSMakePoint(137, 89)]; [bow closePath];
+    [pink setFill]; [bow fill]; bow.lineWidth = 2; [ink setStroke]; [bow stroke];
+    NSDictionary *titleStyle = @{NSFontAttributeName:[NSFont boldSystemFontOfSize:29], NSForegroundColorAttributeName:ink};
+    NSDictionary *subStyle = @{NSFontAttributeName:[NSFont boldSystemFontOfSize:11], NSForegroundColorAttributeName:ink};
+    [@"SYMCLICK!" drawAtPoint:NSMakePoint(183, 78) withAttributes:titleStyle];
+    [@"YOUR CLICKING SIDEKICK ✦" drawAtPoint:NSMakePoint(240, 48) withAttributes:subStyle];
+    [@"SET IT UP. STAY IN CONTROL." drawAtPoint:NSMakePoint(240, 30) withAttributes:subStyle];
+}
+@end
+
 @interface HotKeyRecorderButton : NSButton
 @property(nonatomic, weak) AppDelegate *recorderDelegate;
 @property(nonatomic) BOOL recording;
@@ -628,6 +688,29 @@ bool ReplaceHotKey(EventHotKeyRef &current, Register registerNew, Unregister unr
     [self.recorderDelegate recorderDidCaptureKeyCode:event.keyCode modifiers:modifiers];
 }
 
+@end
+
+// A static, short-lived badge: no animation runs between updates, including when
+// macOS Reduce Motion is enabled. The window never accepts pointer events.
+@interface ClickEffectView : NSView
+@end
+@implementation ClickEffectView
+- (void)drawRect:(NSRect)dirtyRect {
+    (void)dirtyRect;
+    NSBezierPath *bubble = [NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds, 3, 3) xRadius:14 yRadius:14];
+    [NSColor.systemYellowColor setFill];
+    [bubble fill];
+    [NSColor.blackColor setStroke];
+    bubble.lineWidth = 3;
+    [bubble stroke];
+    NSDictionary *attributes = @{NSFontAttributeName: [NSFont boldSystemFontOfSize:22],
+                                 NSForegroundColorAttributeName: NSColor.blackColor};
+    NSString *text = @"CLICK!";
+    NSSize size = [text sizeWithAttributes:attributes];
+    [text drawAtPoint:NSMakePoint((self.bounds.size.width - size.width) / 2,
+                                 (self.bounds.size.height - size.height) / 2)
+       withAttributes:attributes];
+}
 @end
 
 @implementation AppDelegate {
@@ -678,6 +761,11 @@ bool ReplaceHotKey(EventHotKeyRef &current, Register registerNew, Unregister unr
     NSTextField *_fixedLocationLabel;
     NSTextField *_permissionLabel;
     NSTimer *_statusTimer;
+    NSButton *_effectCheckbox;
+    NSWindow *_effectWindow;
+    BOOL _effectEnabled;
+    uint64_t _lastEffectCount;
+    CFTimeInterval _effectExpires;
 }
 
 static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *userData) {
@@ -711,8 +799,10 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
         kClickPatternPreference: @0,
         kJitterPixelsPreference: @0.0,
         kStartDelayPreference: @(kDefaultStartDelaySeconds),
+        kClickEffectPreference: @NO,
     }];
 
+    _effectEnabled = [defaults boolForKey:kClickEffectPreference];
     _cps = NormalizeCPS([defaults doubleForKey:kCPSPreference]);
     _mouseButton = std::clamp((int)[defaults integerForKey:kMouseButtonPreference], 0, 2);
     _hotKeyCode = (UInt32)[defaults integerForKey:kHotKeyCodePreference];
@@ -760,6 +850,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     if (_hotKey) UnregisterEventHotKey(_hotKey);
     if (_hotKeyHandler) RemoveEventHandler(_hotKeyHandler);
     [_statusTimer invalidate];
+    [_effectWindow orderOut:nil];
 }
 
 - (void)buildMenu {
@@ -920,6 +1011,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
         }
     }
 
+    _lastEffectCount = 0;
     _engine.start();
     [self updateUI];
 }
@@ -1037,7 +1129,45 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
 
 - (void)pollEngine:(NSTimer *)timer {
     (void)timer;
+    const uint64_t count = _engine.clickCount();
+    if (ShouldShowClickEffect(_effectEnabled, count, _lastEffectCount)) {
+        [self showClickEffect];
+    }
+    _lastEffectCount = count;
+    if (_effectWindow.visible && (!_effectEnabled || CACurrentMediaTime() >= _effectExpires)) {
+        [_effectWindow orderOut:nil];
+    }
     [self updateUI];
+}
+
+- (void)showClickEffect {
+    if (!_effectWindow) {
+        _effectWindow = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 110, 48)
+            styleMask:NSWindowStyleMaskBorderless backing:NSBackingStoreBuffered defer:NO];
+        _effectWindow.opaque = NO;
+        _effectWindow.backgroundColor = NSColor.clearColor;
+        _effectWindow.hasShadow = YES;
+        _effectWindow.ignoresMouseEvents = YES;
+        _effectWindow.level = NSFloatingWindowLevel;
+        _effectWindow.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces |
+            NSWindowCollectionBehaviorFullScreenAuxiliary | NSWindowCollectionBehaviorIgnoresCycle;
+        _effectWindow.contentView = [[ClickEffectView alloc] initWithFrame:NSMakeRect(0, 0, 110, 48)];
+    }
+    NSPoint point = NSEvent.mouseLocation;
+    if (_locationMode == 1 && NSScreen.screens.count) {
+        // Quartz uses a top-left origin on the primary screen; AppKit uses bottom-left.
+        point = NSMakePoint(_fixedLocation.x, NSMaxY(NSScreen.screens.firstObject.frame) - _fixedLocation.y);
+    }
+    [_effectWindow setFrameOrigin:NSMakePoint(point.x + 12, point.y + 12)];
+    [_effectWindow orderFrontRegardless];
+    _effectExpires = CACurrentMediaTime() + 0.2;
+}
+
+- (void)effectChanged:(NSButton *)sender {
+    _effectEnabled = sender.state == NSControlStateValueOn;
+    [NSUserDefaults.standardUserDefaults setBool:_effectEnabled forKey:kClickEffectPreference];
+    _lastEffectCount = _engine.clickCount();
+    if (!_effectEnabled) [_effectWindow orderOut:nil];
 }
 
 - (void)updateUI {
@@ -1091,6 +1221,7 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
 
 - (void)refreshPreferencesControls {
     if (!_preferencesWindow) return;
+    _effectCheckbox.state = _effectEnabled ? NSControlStateValueOn : NSControlStateValueOff;
     [_patternPopup selectItemAtIndex:_clickPattern];
     [_locationPopup selectItemAtIndex:_locationMode];
     [_limitPopup selectItemAtIndex:_limitMode];
@@ -1145,8 +1276,11 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
 }
 
 - (void)buildPreferencesWindow {
+    NSScreen *screen = NSScreen.mainScreen;
+    CGFloat availableHeight = screen ? NSHeight(screen.visibleFrame) : 760;
+    CGFloat contentHeight = std::max<CGFloat>(240, std::min<CGFloat>(720, availableHeight - 32));
     _preferencesWindow = [[NSWindow alloc]
-        initWithContentRect:NSMakeRect(0, 0, 560, 550)
+        initWithContentRect:NSMakeRect(0, 0, 560, contentHeight)
                   styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
                     backing:NSBackingStoreBuffered
                       defer:NO];
@@ -1154,6 +1288,9 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     _preferencesWindow.releasedWhenClosed = NO;
     _preferencesWindow.delegate = self;
 
+    SymClickBanner *banner = [[SymClickBanner alloc] initWithFrame:NSZeroRect];
+    banner.translatesAutoresizingMaskIntoConstraints = NO;
+    [banner.heightAnchor constraintEqualToConstant:126].active = YES;
     NSTextField *intro = Label(@"Fast, native clicking with predictable limits and target control.");
     intro.font = [NSFont systemFontOfSize:13];
 
@@ -1284,6 +1421,8 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     startDelayControls.orientation = NSUserInterfaceLayoutOrientationHorizontal;
     startDelayControls.spacing = 8;
 
+    _effectCheckbox = [NSButton checkboxWithTitle:@"Show CLICK! effect" target:self action:@selector(effectChanged:)];
+
     NSGridView *grid = [NSGridView gridViewWithViews:@[
         @[shortcutLabel, _recorderButton],
         @[speedLabel, speedControls],
@@ -1323,19 +1462,34 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     buttonRow.distribution = NSStackViewDistributionFill;
 
     NSStackView *root = [NSStackView stackViewWithViews:@[
-        intro, grid, speedHint, permissionRow, buttonRow,
+        banner, intro, grid, _effectCheckbox, speedHint, permissionRow, buttonRow,
     ]];
     root.translatesAutoresizingMaskIntoConstraints = NO;
     root.orientation = NSUserInterfaceLayoutOrientationVertical;
     root.alignment = NSLayoutAttributeLeading;
     root.spacing = 14;
-    [_preferencesWindow.contentView addSubview:root];
+    NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSZeroRect];
+    scroll.translatesAutoresizingMaskIntoConstraints = NO;
+    scroll.hasVerticalScroller = YES;
+    scroll.autohidesScrollers = YES;
+    scroll.drawsBackground = NO;
+    NSView *document = [NSView new];
+    document.translatesAutoresizingMaskIntoConstraints = NO;
+    [document addSubview:root];
+    scroll.documentView = document;
+    [_preferencesWindow.contentView addSubview:scroll];
 
     [NSLayoutConstraint activateConstraints:@[
-        [root.leadingAnchor constraintEqualToAnchor:_preferencesWindow.contentView.leadingAnchor constant:24],
-        [root.trailingAnchor constraintEqualToAnchor:_preferencesWindow.contentView.trailingAnchor constant:-24],
-        [root.topAnchor constraintEqualToAnchor:_preferencesWindow.contentView.topAnchor constant:22],
-        [root.bottomAnchor constraintLessThanOrEqualToAnchor:_preferencesWindow.contentView.bottomAnchor constant:-22],
+        [scroll.leadingAnchor constraintEqualToAnchor:_preferencesWindow.contentView.leadingAnchor],
+        [scroll.trailingAnchor constraintEqualToAnchor:_preferencesWindow.contentView.trailingAnchor],
+        [scroll.topAnchor constraintEqualToAnchor:_preferencesWindow.contentView.topAnchor],
+        [scroll.bottomAnchor constraintEqualToAnchor:_preferencesWindow.contentView.bottomAnchor],
+        [document.widthAnchor constraintEqualToAnchor:scroll.contentView.widthAnchor],
+        [root.leadingAnchor constraintEqualToAnchor:document.leadingAnchor constant:24],
+        [root.trailingAnchor constraintEqualToAnchor:document.trailingAnchor constant:-24],
+        [root.topAnchor constraintEqualToAnchor:document.topAnchor constant:22],
+        [root.bottomAnchor constraintEqualToAnchor:document.bottomAnchor constant:-22],
+        [banner.widthAnchor constraintEqualToAnchor:root.widthAnchor],
         [permissionRow.widthAnchor constraintEqualToAnchor:root.widthAnchor],
         [buttonRow.widthAnchor constraintEqualToAnchor:root.widthAnchor],
     ]];
@@ -1452,6 +1606,9 @@ static OSStatus HandleGlobalHotKey(EventHandlerCallRef, EventRef event, void *us
     [self applyClickPattern:0];
     [self applyJitter:0.0];
     [self applyStartDelay:kDefaultStartDelaySeconds];
+    _effectEnabled = NO;
+    [NSUserDefaults.standardUserDefaults setBool:NO forKey:kClickEffectPreference];
+    [_effectWindow orderOut:nil];
     _fixedLocation = CGPointZero;
     _hasFixedLocation = false;
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
@@ -1551,6 +1708,8 @@ int RunSelfTests() {
                                [&](EventHotKeyRef key) { removed = key == oldKey; }) ||
                 current != newKey || !removed) return 14;
         }
+        if (ShouldShowClickEffect(false, 1, 0) || ShouldShowClickEffect(true, 0, 0) ||
+            ShouldShowClickEffect(true, 10, 10) || !ShouldShowClickEffect(true, 10, 1)) return 15;
         NSLog(@"SymClick self-test passed");
     }
     return 0;

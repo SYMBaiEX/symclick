@@ -13,7 +13,7 @@ SIGN_IDENTITY ?= -
 
 CXXFLAGS := -std=c++20 -O3 -flto -fobjc-arc -Wall -Wextra -Wpedantic \
 	-Wno-deprecated-declarations -mmacosx-version-min=12.0 $(ARCHS)
-FRAMEWORKS := -framework AppKit -framework ApplicationServices -framework Carbon
+FRAMEWORKS := -framework AppKit -framework ApplicationServices -framework Carbon -framework QuartzCore
 CODESIGN_FLAGS := --force --sign "$(SIGN_IDENTITY)"
 ifneq ($(SIGN_IDENTITY),-)
 CODESIGN_FLAGS += --timestamp --options runtime

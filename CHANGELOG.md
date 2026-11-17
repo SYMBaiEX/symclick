@@ -10,6 +10,7 @@ All notable changes to SymClick are documented here. This project follows
 - Local `--performance-report` JSON for privacy-conscious support triage.
 - Versioned JSON Schema for agent events and normalized plans.
 - Opt-in read-only agent pointer and display coordinate inspector, including scale.
+- Optional, off-by-default CLICK! visual indicator for menu-bar runs.
 - Local `symclick-agent/v1` JSONL contract for status, dry-run validation, and
   explicitly confirmed finite runs.
 - Agent runs require a fixed target, a click-count or duration bound, and a
@@ -19,7 +20,7 @@ All notable changes to SymClick are documented here. This project follows
 ### Improved
 
 - Shortcut registration failures now offer a retry, preserve a working shortcut, and report unavailable defaults.
-
+- Preferences now feature an original comic-inspired illustrated banner while retaining native controls.
 - `make verify` now checks both universal architectures with the current `lipo`
   command syntax and exercises the agent contract.
 - Headless smoke checks report an explicit skip when no interactive display session
