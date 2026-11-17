@@ -43,6 +43,7 @@ smoke: all
 
 agent-check: all
 	python3 tests/agent_contract.py $(BINARY)
+	python3 tests/agent_fixtures.py $(BINARY)
 
 verify: test agent-check
 	plutil -lint $(PLIST)

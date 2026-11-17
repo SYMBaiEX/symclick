@@ -50,6 +50,13 @@ Exit status is `0` for a completed command, `2` for invalid input, and `3` when
 Accessibility permission is required. A caller should not retry an invalid
 request without changing it.
 
+The checked-in examples in `tests/fixtures/agent-v1/` cover status, both bound
+types, both completion reasons, and the documented errors. Run `make agent-check`
+to validate these fixtures and compare the read-only CLI output. Run and permission
+error fixtures are examples only: the test never starts a real run or changes
+Accessibility permission. Status fields such as architecture and permission
+depend on the host.
+
 ## Recommended AI-agent flow
 
 1. Run `--agent-status` and inspect `accessibility` and `protocol`.

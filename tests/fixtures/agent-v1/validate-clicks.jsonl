@@ -1,0 +1,1 @@
+{"protocol":"symclick-agent/v1","event":"validated","valid":true,"target":{"x":100,"y":200},"cps":100,"button":"left","pattern":"single","jitter":0,"start_delay_seconds":1,"bound":{"type":"clicks","value":3}}
