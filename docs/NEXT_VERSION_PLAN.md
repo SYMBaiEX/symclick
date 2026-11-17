@@ -37,6 +37,7 @@ plane.
   same shortcut cancels the countdown.
 - Reset Defaults restores the shortcut and every click setting after confirmation.
 - `--diagnose` reports the bundle version, host architecture, and Accessibility state.
+- `--performance-report` adds normalized configuration bounds and timing mode without measuring throughput or exposing coordinates.
 - `--smoke-test` boots the real AppKit delegate/menu-bar lifecycle and exits cleanly;
   `make diagnostics` and `make smoke` make these release gates repeatable.
 

@@ -19,7 +19,7 @@ ifneq ($(SIGN_IDENTITY),-)
 CODESIGN_FLAGS += --timestamp --options runtime
 endif
 
-.PHONY: all run test diagnostics smoke agent-check verify package install clean
+.PHONY: all run test diagnostics smoke agent-check report-check verify package install clean
 
 all: $(BINARY)
 
@@ -46,7 +46,10 @@ agent-check: all
 	$(BINARY) --agent-status >/dev/null
 	$(BINARY) --agent-validate --x 0 --y 0 --clicks 1 --cps 25 >/dev/null
 
-verify: test agent-check
+report-check: all
+	python3 tests/performance_report.py $(BINARY)
+
+verify: test agent-check report-check
 	plutil -lint $(PLIST)
 	lipo -verify_arch arm64 $(BINARY)
 	lipo -verify_arch x86_64 $(BINARY)
