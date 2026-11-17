@@ -38,6 +38,9 @@ reports a deliberate skip. It is safe to run without generating clicks.
 For AI-agent work, read [`docs/AGENT_INTEGRATION.md`](docs/AGENT_INTEGRATION.md).
 Use `--agent-validate` for dry runs. Never invoke `--agent-run` in tests or a
 shared desktop without an explicit user-confirmed target and finite bound.
+`make agent-check` runs the no-click contract suite using the Python 3 provided
+with Xcode Command Line Tools. It never invokes a confirmed run; a separate
+interactive fixture is needed to test click delivery or permission-denied execution.
 
 ## Pull requests
 
