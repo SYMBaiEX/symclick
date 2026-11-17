@@ -50,8 +50,10 @@ report-check: all
 
 verify: test agent-check report-check
 	plutil -lint $(PLIST)
-	lipo -verify_arch arm64 $(BINARY)
-	lipo -verify_arch x86_64 $(BINARY)
+	@archs="$$(lipo -archs $(BINARY))"; \
+	  for arch in arm64 x86_64; do \
+	    case " $$archs " in *" $$arch "*) ;; *) echo "Missing architecture: $$arch" >&2; exit 1;; esac; \
+	  done; echo "Architectures: $$archs"
 	codesign --verify --deep --strict --verbose=2 $(APP_BUNDLE)
 
 package: all

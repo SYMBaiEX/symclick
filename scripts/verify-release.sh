@@ -34,8 +34,13 @@ for key in CFBundleShortVersionString CFBundleVersion CFBundleIdentifier; do
   [ -n "$source_value" ] && [ "$source_value" = "$archive_value" ] || fail "$key differs from Info.plist"
   printf '%s: %s\n' "$key" "$archive_value"
 done
-lipo -verify_arch arm64 "$binary" || fail "missing arm64 architecture"
-lipo -verify_arch x86_64 "$binary" || fail "missing x86_64 architecture"
+archs=$(lipo -archs "$binary") || fail "cannot read binary architectures"
+for arch in arm64 x86_64; do
+  case " $archs " in
+    *" $arch "*) ;;
+    *) fail "missing $arch architecture" ;;
+  esac
+done
 codesign --verify --deep --strict "$app" || fail "signature verification failed"
 printf 'Architectures: arm64 x86_64\nSignature: valid\nArchive integrity: valid\nSHA-256: %s  %s\n' "$actual" "$archive_name"
 printf 'Notarization: not checked\n'
