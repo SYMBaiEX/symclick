@@ -8,6 +8,7 @@ All notable changes to SymClick are documented here. This project follows
 ### Added
 
 - Local `--performance-report` JSON for privacy-conscious support triage.
+- Versioned JSON Schema for agent events and normalized plans.
 
 - Local `symclick-agent/v1` JSONL contract for status, dry-run validation, and
   explicitly confirmed finite runs.
