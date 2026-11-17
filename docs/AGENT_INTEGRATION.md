@@ -7,6 +7,7 @@ HTTP endpoint, account, telemetry, or network dependency.
 ## Safety model
 
 - `--agent-status` is read-only.
+- `--agent-inspect` takes a single read-only pointer and display snapshot; it never clicks, selects, or stores a target.
 - `--agent-validate` is a dry run and never posts a mouse event.
 - `--agent-run` requires `--confirm`.
 - Agent runs always use an explicit fixed screen coordinate (`--x` and `--y`).
@@ -24,6 +25,7 @@ build:
 APP=/Applications/SymClick.app/Contents/MacOS/SymClick
 $APP --agent-help
 $APP --agent-status
+$APP --agent-inspect
 $APP --agent-validate --x 640 --y 420 --clicks 25 --cps 100
 $APP --agent-run --confirm --x 640 --y 420 --clicks 25 --cps 100 --delay 1
 ```
@@ -57,11 +59,23 @@ error fixtures are examples only: the test never starts a real run or changes
 Accessibility permission. Status fields such as architecture and permission
 depend on the host.
 
+The opt-in `--agent-inspect` command returns an `inspection` event with the
+current `pointer`, active `displays`, their global `bounds`, and each display’s
+backing `scale` (or `null` if unavailable). Coordinates and bounds are Core
+Graphics global points, not physical pixels; the origin is the upper-left of the
+main display and secondary displays can have negative coordinates. The snapshot
+is instantaneous and may become stale if the pointer or displays move. The
+command captures no screenshot and writes no persistent data. A nonzero exit
+with `display_unavailable` or `pointer_unavailable` means no snapshot was made.
+Extra arguments are rejected.
+
 ## Recommended AI-agent flow
 
 1. Run `--agent-status` and inspect `accessibility` and `protocol`.
-2. Ask the user to identify or confirm the target coordinate; do not infer a
-   target from a screenshot without user confirmation.
+2. Ask the user to move the pointer to the intended target, then invoke the
+   optional `--agent-inspect` once. Show the returned coordinate and ask the
+   user to explicitly confirm that exact target; inspection does not select or
+   authorize it. Do not infer a target from a screenshot.
 3. Build a finite plan with a click count or duration, conservative CPS, and a
    start delay.
 4. Run `--agent-validate` and show the normalized plan to the user.

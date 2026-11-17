@@ -46,6 +46,7 @@ plane.
 - `--agent-help` publishes a versioned `symclick-agent/v1` contract.
 - `--agent-status` reports version, architecture, Accessibility state, and local
   capabilities without generating input.
+- `--agent-inspect` reports a read-only pointer and display snapshot for target confirmation.
 - `--agent-validate` normalizes a fixed-target plan without posting any events.
 - `--agent-run` executes only an explicitly confirmed finite click-count or duration
   run and emits `ready`, `started`, and `completed` JSONL events.
